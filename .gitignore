@@ -1,0 +1,17 @@
+# Binaries
+enjoyable-stats
+*.exe
+
+# Demo files (can be large)
+*.dem
+/tmp/
+
+# Database
+*.db
+
+# Environment / secrets
+.env
+
+# Go test cache
+*.test
+*.tar.gz
