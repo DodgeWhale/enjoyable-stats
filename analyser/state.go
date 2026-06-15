@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	common "github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/common"
+	"github.com/oklog/ulid/v2"
 )
 
 type State struct {
@@ -21,6 +22,14 @@ type State struct {
 	clutcher        uint64
 	clutchTeam      common.Team
 	clutchVsEnemies int
+
+	roundHasKill        bool
+	awpPurchaseWeapon   map[uint64]ulid.ULID
+	awpKillWithOwn      map[uint64]bool
+	diedThisRound       map[uint64]bool
+	firstKills          map[uint64]int
+	bombObjectiveRounds map[uint64][]int
+	prevBombGod         map[uint64]int
 }
 
 type StateSnapshot struct {
@@ -110,9 +119,26 @@ func (s *State) ResetRound(players []*common.Player) {
 	s.clutcher = 0
 	s.clutchTeam = 0
 	s.clutchVsEnemies = 0
+	s.roundHasKill = false
+	s.awpPurchaseWeapon = make(map[uint64]ulid.ULID)
+	s.awpKillWithOwn = make(map[uint64]bool)
+	s.diedThisRound = make(map[uint64]bool)
 	for _, p := range players {
 		if p.IsAlive() {
 			s.alive[p.Team]++
 		}
 	}
+}
+
+func (s *State) recordBombObjective(id uint64) {
+	for _, r := range s.bombObjectiveRounds[id] {
+		if r == s.Round {
+			return
+		}
+	}
+	s.bombObjectiveRounds[id] = append(s.bombObjectiveRounds[id], s.Round)
+}
+
+func (s *State) bombObjectiveCount(id uint64) int {
+	return len(s.bombObjectiveRounds[id])
 }

@@ -16,7 +16,10 @@ type Analyser struct {
 
 func New() *Analyser {
 	return &Analyser{
-		triggers: []Trigger{TeamKill{}, Ace{}, Clutch{}, MVP{}},
+		triggers: []Trigger{
+			TeamKill{}, Ace{}, Clutch{}, MVP{},
+			LurkerTax{}, BombGod{}, EntryKing{}, RefundRequest{},
+		},
 	}
 }
 
@@ -31,12 +34,15 @@ func (a *Analyser) Analyse(path string, tracked map[string]bool, debug bool) ([]
 	defer parser.Close()
 
 	state := State{
-		Tracked:   make(map[uint64]bool, len(tracked)),
-		kills:     make(map[uint64]int),
-		mvps:      make(map[uint64]int),
-		prevMVPs:  make(map[uint64]int),
-		mvpRounds: make(map[uint64][]int),
-		alive:     make(map[common.Team]int),
+		Tracked:             make(map[uint64]bool, len(tracked)),
+		kills:               make(map[uint64]int),
+		mvps:                make(map[uint64]int),
+		prevMVPs:            make(map[uint64]int),
+		mvpRounds:           make(map[uint64][]int),
+		alive:               make(map[common.Team]int),
+		firstKills:          make(map[uint64]int),
+		bombObjectiveRounds: make(map[uint64][]int),
+		prevBombGod:         make(map[uint64]int),
 	}
 	for id := range tracked {
 		uid, err := strconv.ParseUint(id, 10, 64)
@@ -73,8 +79,19 @@ func (a *Analyser) Analyse(path string, tracked map[string]bool, debug bool) ([]
 		}
 		state.Round = parser.GameState().TotalRoundsPlayed()
 
-		if e.Killer != nil && state.Tracked[e.Killer.SteamID64] {
-			state.kills[e.Killer.SteamID64]++
+		if e.Killer != nil {
+			if !state.roundHasKill {
+				state.roundHasKill = true
+				state.firstKills[e.Killer.SteamID64]++
+			}
+			if state.Tracked[e.Killer.SteamID64] {
+				state.kills[e.Killer.SteamID64]++
+				if isAWP(e.Weapon) {
+					if purchaseID, ok := state.awpPurchaseWeapon[e.Killer.SteamID64]; ok && e.Weapon != nil && e.Weapon.UniqueID2() == purchaseID {
+						state.awpKillWithOwn[e.Killer.SteamID64] = true
+					}
+				}
+			}
 		}
 
 		for _, t := range a.triggers {
@@ -86,6 +103,9 @@ func (a *Analyser) Analyse(path string, tracked map[string]bool, debug bool) ([]
 		if e.Victim == nil {
 			record("kill")
 			return
+		}
+		if state.Tracked[e.Victim.SteamID64] {
+			state.diedThisRound[e.Victim.SteamID64] = true
 		}
 		state.alive[e.Victim.Team]--
 		if state.alive[e.Victim.Team] != 1 {
@@ -109,6 +129,46 @@ func (a *Analyser) Analyse(path string, tracked map[string]bool, debug bool) ([]
 		record("kill")
 	})
 
+	parser.RegisterEventHandler(func(e events.ItemPickup) {
+		if parser.GameState().IsWarmupPeriod() {
+			return
+		}
+		state.Round = parser.GameState().TotalRoundsPlayed()
+		if e.Player == nil || !state.Tracked[e.Player.SteamID64] || !isAWP(e.Weapon) {
+			return
+		}
+		if !parser.GameState().IsFreezetimePeriod() && !e.Player.IsInBuyZone() {
+			return
+		}
+		state.awpPurchaseWeapon[e.Player.SteamID64] = e.Weapon.UniqueID2()
+		record("item_pickup")
+	})
+
+	recordBomb := func(player *common.Player) {
+		if player == nil || !state.Tracked[player.SteamID64] {
+			return
+		}
+		state.recordBombObjective(player.SteamID64)
+	}
+
+	parser.RegisterEventHandler(func(e events.BombPlanted) {
+		if parser.GameState().IsWarmupPeriod() {
+			return
+		}
+		state.Round = parser.GameState().TotalRoundsPlayed()
+		recordBomb(e.Player)
+		record("bomb_planted")
+	})
+
+	parser.RegisterEventHandler(func(e events.BombDefused) {
+		if parser.GameState().IsWarmupPeriod() {
+			return
+		}
+		state.Round = parser.GameState().TotalRoundsPlayed()
+		recordBomb(e.Player)
+		record("bomb_defused")
+	})
+
 	parser.RegisterEventHandler(func(e events.RoundEnd) {
 		if parser.GameState().IsWarmupPeriod() {
 			return
@@ -130,11 +190,20 @@ func (a *Analyser) Analyse(path string, tracked map[string]bool, debug bool) ([]
 				insights = append(insights, h.OnRoundEnd(&state, e)...)
 			}
 		}
+		for id := range state.Tracked {
+			state.prevBombGod[id] = state.bombObjectiveCount(id)
+		}
 		record("round_end")
 	})
 
 	if err := parser.ParseToEnd(); err != nil {
 		return nil, nil, fmt.Errorf("analyser: parse: %w", err)
+	}
+
+	for _, t := range a.triggers {
+		if h, ok := t.(MatchEndHook); ok {
+			insights = append(insights, h.OnMatchEnd(&state)...)
+		}
 	}
 
 	return insights, stateLog, nil

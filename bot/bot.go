@@ -121,6 +121,16 @@ func formatInsight(ins analyser.Insight) string {
 	case "clutch":
 		vs, _ := ins.Detail["vs"].(int)
 		return fmt.Sprintf("  🏆 1v%d clutch in round %d", vs, ins.Round)
+	case "lurker_tax":
+		vs, _ := ins.Detail["vs"].(int)
+		return fmt.Sprintf("  🐌 Lurked into a 1v%d and chose death (round %d)", vs, ins.Round)
+	case "bomb_god":
+		return "  💣 Actually played the objective unlike everyone else."
+	case "entry_king":
+		count, _ := ins.Detail["first_kills"].(int)
+		return fmt.Sprintf("  🚪 Opened more doors than an estate agent (%d entry frags)", count)
+	case "refund_request":
+		return fmt.Sprintf("  💸 £4,750 decoy grenade (round %d)", ins.Round)
 	default:
 		return fmt.Sprintf("  [%s] round %d", ins.TriggerType, ins.Round)
 	}

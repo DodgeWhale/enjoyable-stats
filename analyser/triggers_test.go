@@ -5,6 +5,7 @@ import (
 
 	common "github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/common"
 	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/events"
+	"github.com/oklog/ulid/v2"
 )
 
 func TestTeamKill_firesOnSameTeamKillByTrackedPlayer(t *testing.T) {
@@ -137,6 +138,127 @@ func TestMVP_doesNotFireWhenNoNewMVPAboveThreshold(t *testing.T) {
 		alive:    make(map[common.Team]int),
 	}
 	got := MVP{}.OnRoundEnd(s, events.RoundEnd{})
+	if len(got) != 0 {
+		t.Fatalf("len(insights) = %d, want 0", len(got))
+	}
+}
+
+func TestLurkerTax_firesWhenLastAliveLosesVsThreeOrMore(t *testing.T) {
+	s := &State{
+		Round:           5,
+		Tracked:         map[uint64]bool{7: true},
+		clutcher:        7,
+		clutchTeam:      common.TeamTerrorists,
+		clutchVsEnemies: 3,
+	}
+	got := LurkerTax{}.OnRoundEnd(s, events.RoundEnd{Winner: common.TeamCounterTerrorists})
+	if len(got) != 1 {
+		t.Fatalf("len(insights) = %d, want 1", len(got))
+	}
+	if got[0].TriggerType != "lurker_tax" {
+		t.Errorf("TriggerType = %q, want %q", got[0].TriggerType, "lurker_tax")
+	}
+}
+
+func TestLurkerTax_doesNotFireWhenLastAliveWins(t *testing.T) {
+	s := &State{
+		Round:           5,
+		Tracked:         map[uint64]bool{7: true},
+		clutcher:        7,
+		clutchTeam:      common.TeamTerrorists,
+		clutchVsEnemies: 3,
+	}
+	got := LurkerTax{}.OnRoundEnd(s, events.RoundEnd{Winner: common.TeamTerrorists})
+	if len(got) != 0 {
+		t.Fatalf("len(insights) = %d, want 0", len(got))
+	}
+}
+
+func TestBombGod_firesWhenCrossingThreeObjectiveRounds(t *testing.T) {
+	s := &State{
+		Round:               12,
+		Tracked:             map[uint64]bool{55: true},
+		bombObjectiveRounds: map[uint64][]int{55: {2, 7, 12}},
+		prevBombGod:         map[uint64]int{55: 2},
+	}
+	got := BombGod{}.OnRoundEnd(s, events.RoundEnd{})
+	if len(got) != 1 {
+		t.Fatalf("len(insights) = %d, want 1", len(got))
+	}
+	if got[0].TriggerType != "bomb_god" {
+		t.Errorf("TriggerType = %q, want %q", got[0].TriggerType, "bomb_god")
+	}
+}
+
+func TestBombGod_doesNotFireBeforeThreshold(t *testing.T) {
+	s := &State{
+		Round:               8,
+		Tracked:             map[uint64]bool{55: true},
+		bombObjectiveRounds: map[uint64][]int{55: {2, 7}},
+		prevBombGod:         map[uint64]int{55: 1},
+	}
+	got := BombGod{}.OnRoundEnd(s, events.RoundEnd{})
+	if len(got) != 0 {
+		t.Fatalf("len(insights) = %d, want 0", len(got))
+	}
+}
+
+func TestEntryKing_firesForTrackedLeaderAtMatchEnd(t *testing.T) {
+	s := &State{
+		Round:      30,
+		Tracked:    map[uint64]bool{11: true, 22: true},
+		firstKills: map[uint64]int{11: 4, 22: 2, 33: 10},
+	}
+	got := EntryKing{}.OnMatchEnd(s)
+	if len(got) != 1 {
+		t.Fatalf("len(insights) = %d, want 1", len(got))
+	}
+	if got[0].SteamID != "11" {
+		t.Errorf("SteamID = %q, want %q", got[0].SteamID, "11")
+	}
+	firstKills, _ := got[0].Detail["first_kills"].(int)
+	if firstKills != 4 {
+		t.Errorf("Detail[first_kills] = %d, want 4", firstKills)
+	}
+}
+
+func TestRefundRequest_firesWhenAWPBoughtDiedWithNoKill(t *testing.T) {
+	s := &State{
+		Round:             9,
+		Tracked:           map[uint64]bool{88: true},
+		awpPurchaseWeapon: map[uint64]ulid.ULID{88: ulid.Make()},
+		diedThisRound:     map[uint64]bool{88: true},
+	}
+	got := RefundRequest{}.OnRoundEnd(s, events.RoundEnd{})
+	if len(got) != 1 {
+		t.Fatalf("len(insights) = %d, want 1", len(got))
+	}
+	if got[0].TriggerType != "refund_request" {
+		t.Errorf("TriggerType = %q, want %q", got[0].TriggerType, "refund_request")
+	}
+}
+
+func TestRefundRequest_doesNotFireWhenAWPGetsAKill(t *testing.T) {
+	s := &State{
+		Round:             9,
+		Tracked:           map[uint64]bool{88: true},
+		awpPurchaseWeapon: map[uint64]ulid.ULID{88: ulid.Make()},
+		awpKillWithOwn:    map[uint64]bool{88: true},
+		diedThisRound:     map[uint64]bool{88: true},
+	}
+	got := RefundRequest{}.OnRoundEnd(s, events.RoundEnd{})
+	if len(got) != 0 {
+		t.Fatalf("len(insights) = %d, want 0", len(got))
+	}
+}
+
+func TestRefundRequest_doesNotFireWhenPlayerSurvives(t *testing.T) {
+	s := &State{
+		Round:             9,
+		Tracked:           map[uint64]bool{88: true},
+		awpPurchaseWeapon: map[uint64]ulid.ULID{88: ulid.Make()},
+	}
+	got := RefundRequest{}.OnRoundEnd(s, events.RoundEnd{})
 	if len(got) != 0 {
 		t.Fatalf("len(insights) = %d, want 0", len(got))
 	}
