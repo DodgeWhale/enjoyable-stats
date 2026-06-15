@@ -62,6 +62,8 @@ func (b *Bot) onInteraction(s *discordgo.Session, i *discordgo.InteractionCreate
 		b.handleLinkSteam(s, i, data)
 	case "unlink-steam":
 		b.handleUnlinkSteam(s, i)
+	case "analyse-demo":
+		b.handleAnalyseDemo(s, i, data)
 	}
 }
 
@@ -84,9 +86,20 @@ func (b *Bot) PostInsights(channelID string, insights []analyser.Insight, player
 		}
 
 		var sb strings.Builder
-		sb.WriteString(mention + " highlights:\n")
+		sb.WriteString(mention)
+		sb.WriteString(" highlights:\n")
+
+		var mvpIns []analyser.Insight
 		for _, ins := range playerInsights {
+			if ins.TriggerType == "mvp" {
+				mvpIns = append(mvpIns, ins)
+				continue
+			}
 			sb.WriteString(formatInsight(ins))
+			sb.WriteString("\n")
+		}
+		if len(mvpIns) > 0 {
+			sb.WriteString(formatMVPInsights(mvpIns))
 			sb.WriteString("\n")
 		}
 
@@ -108,10 +121,26 @@ func formatInsight(ins analyser.Insight) string {
 	case "clutch":
 		vs, _ := ins.Detail["vs"].(int)
 		return fmt.Sprintf("  🏆 1v%d clutch in round %d", vs, ins.Round)
-	case "mvp":
-		mvps, _ := ins.Detail["mvps"].(int)
-		return fmt.Sprintf("  ⭐ %d MVPs (round %d)", mvps, ins.Round)
 	default:
 		return fmt.Sprintf("  [%s] round %d", ins.TriggerType, ins.Round)
 	}
+}
+
+// formatMVPInsights consolidates one or more MVP insights for a single player
+// into one line listing every round they earned an MVP.
+func formatMVPInsights(ins []analyser.Insight) string {
+	last := ins[len(ins)-1]
+	count, _ := last.Detail["mvps"].(int)
+	rounds, _ := last.Detail["rounds"].([]int)
+
+	roundStrs := make([]string, len(rounds))
+	for i, r := range rounds {
+		roundStrs[i] = fmt.Sprintf("%d", r)
+	}
+
+	label := "round"
+	if len(roundStrs) > 1 {
+		label = "rounds"
+	}
+	return fmt.Sprintf("  ⭐ %d MVPs (%s %s)", count, label, strings.Join(roundStrs, ", "))
 }

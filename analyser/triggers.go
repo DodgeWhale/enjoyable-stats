@@ -104,7 +104,7 @@ func (Clutch) OnRoundEnd(s *State, e events.RoundEnd) []Insight {
 	}}
 }
 
-// MVP fires when a tracked player reaches 3 round MVPs in the match.
+// MVP fires each time a tracked player earns a new MVP once they have reached 3.
 type MVP struct{}
 
 func (MVP) Name() string { return "mvp" }
@@ -115,14 +115,16 @@ func (MVP) OnRoundEnd(s *State, e events.RoundEnd) []Insight {
 		if !s.Tracked[id] {
 			continue
 		}
-		if s.prevMVPs[id] >= 3 || count < 3 {
+		if count < 3 || count <= s.prevMVPs[id] {
 			continue
 		}
+		rounds := make([]int, len(s.mvpRounds[id]))
+		copy(rounds, s.mvpRounds[id])
 		out = append(out, Insight{
 			SteamID:     strconv.FormatUint(id, 10),
 			TriggerType: "mvp",
 			Round:       s.Round,
-			Detail:      map[string]any{"mvps": count},
+			Detail:      map[string]any{"mvps": count, "rounds": rounds},
 		})
 	}
 	return out

@@ -31,11 +31,12 @@ func (a *Analyser) Analyse(path string, tracked map[string]bool, debug bool) ([]
 	defer parser.Close()
 
 	state := State{
-		Tracked:  make(map[uint64]bool, len(tracked)),
-		kills:    make(map[uint64]int),
-		mvps:     make(map[uint64]int),
-		prevMVPs: make(map[uint64]int),
-		alive:    make(map[common.Team]int),
+		Tracked:   make(map[uint64]bool, len(tracked)),
+		kills:     make(map[uint64]int),
+		mvps:      make(map[uint64]int),
+		prevMVPs:  make(map[uint64]int),
+		mvpRounds: make(map[uint64][]int),
+		alive:     make(map[common.Team]int),
 	}
 	for id := range tracked {
 		uid, err := strconv.ParseUint(id, 10, 64)
@@ -120,6 +121,9 @@ func (a *Analyser) Analyse(path string, tracked map[string]bool, debug bool) ([]
 			prev := state.mvps[p.SteamID64]
 			state.prevMVPs[p.SteamID64] = prev
 			state.mvps[p.SteamID64] = p.MVPs()
+			if p.MVPs() > prev {
+				state.mvpRounds[p.SteamID64] = append(state.mvpRounds[p.SteamID64], state.Round)
+			}
 		}
 		for _, t := range a.triggers {
 			if h, ok := t.(RoundEndHook); ok {

@@ -27,6 +27,18 @@ var slashCommands = []*discordgo.ApplicationCommand{
 		Name:        "unlink-steam",
 		Description: "Unlink your Steam ID from this server",
 	},
+	{
+		Name:        "analyse-demo",
+		Description: "Download and analyse a CS2 demo, posting insights to this channel",
+		Options: []*discordgo.ApplicationCommandOption{
+			{
+				Type:        discordgo.ApplicationCommandOptionString,
+				Name:        "url",
+				Description: "URL of the .dem or .dem.bz2 demo file",
+				Required:    true,
+			},
+		},
+	},
 }
 
 func registerCommands(s *discordgo.Session, appID, guildID string) error {
@@ -81,6 +93,38 @@ func respond(s *discordgo.Session, i *discordgo.InteractionCreate, msg string) {
 	if err != nil {
 		slog.Error("interaction respond failed", "err", err)
 	}
+}
+
+func (b *Bot) handleAnalyseDemo(s *discordgo.Session, i *discordgo.InteractionCreate, data discordgo.ApplicationCommandInteractionData) {
+	demoURL := data.Options[0].StringValue()
+	channelID := i.ChannelID
+
+	// Acknowledge immediately; analysis takes too long to complete within the
+	// 3-second interaction window.
+	if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
+	}); err != nil {
+		slog.Error("analyse-demo: defer response", "err", err)
+		return
+	}
+
+	go func() {
+		err := b.RunAnalysis(demoURL, channelID)
+
+		var msg string
+		if err != nil {
+			slog.Error("analyse-demo: analysis failed", "err", err)
+			msg = fmt.Sprintf("Analysis failed: %s", err)
+		} else {
+			msg = "Analysis complete."
+		}
+
+		if _, editErr := s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+			Content: &msg,
+		}); editErr != nil {
+			slog.Error("analyse-demo: edit response", "err", editErr)
+		}
+	}()
 }
 
 // ValidateSteamID returns true if s is a 17-digit numeric string.

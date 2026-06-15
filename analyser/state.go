@@ -16,6 +16,7 @@ type State struct {
 	kills           map[uint64]int
 	mvps            map[uint64]int
 	prevMVPs        map[uint64]int
+	mvpRounds       map[uint64][]int
 	alive           map[common.Team]int
 	clutcher        uint64
 	clutchTeam      common.Team

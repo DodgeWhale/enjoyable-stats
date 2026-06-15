@@ -106,3 +106,38 @@ func TestMVP_firesWhenCrossingThreeMVPsAtRoundEnd(t *testing.T) {
 		t.Errorf("Detail[mvps] = %d, want 3", mvps)
 	}
 }
+
+func TestMVP_reportsCurrentCountNotJustThreshold(t *testing.T) {
+	count := 7
+	s := &State{
+		Round:    27,
+		Tracked:  map[uint64]bool{42: true},
+		mvps:     map[uint64]int{42: count},
+		prevMVPs: map[uint64]int{42: count - 1},
+		kills:    make(map[uint64]int),
+		alive:    make(map[common.Team]int),
+	}
+	got := MVP{}.OnRoundEnd(s, events.RoundEnd{})
+	if len(got) != 1 {
+		t.Fatalf("len(insights) = %d, want 1", len(got))
+	}
+	mvps, _ := got[0].Detail["mvps"].(int)
+	if mvps != count {
+		t.Errorf("Detail[mvps] = %d, want %d", mvps, count)
+	}
+}
+
+func TestMVP_doesNotFireWhenNoNewMVPAboveThreshold(t *testing.T) {
+	s := &State{
+		Round:    28,
+		Tracked:  map[uint64]bool{42: true},
+		mvps:     map[uint64]int{42: 4},
+		prevMVPs: map[uint64]int{42: 4},
+		kills:    make(map[uint64]int),
+		alive:    make(map[common.Team]int),
+	}
+	got := MVP{}.OnRoundEnd(s, events.RoundEnd{})
+	if len(got) != 0 {
+		t.Fatalf("len(insights) = %d, want 0", len(got))
+	}
+}
