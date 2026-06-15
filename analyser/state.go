@@ -1,0 +1,117 @@
+package analyser
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"strconv"
+
+	common "github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/common"
+)
+
+type State struct {
+	Round   int
+	Tracked map[uint64]bool
+
+	kills           map[uint64]int
+	mvps            map[uint64]int
+	prevMVPs        map[uint64]int
+	alive           map[common.Team]int
+	clutcher        uint64
+	clutchTeam      common.Team
+	clutchVsEnemies int
+}
+
+type StateSnapshot struct {
+	Event           string         `json:"event"`
+	Round           int            `json:"round"`
+	Tracked         []string       `json:"tracked,omitempty"`
+	Kills           map[string]int `json:"kills,omitempty"`
+	MVPs            map[string]int `json:"mvps,omitempty"`
+	PrevMVPs        map[string]int `json:"prev_mvps,omitempty"`
+	Alive           map[string]int `json:"alive,omitempty"`
+	Clutcher        string         `json:"clutcher,omitempty"`
+	ClutchTeam      string         `json:"clutch_team,omitempty"`
+	ClutchVsEnemies int            `json:"clutch_vs_enemies,omitempty"`
+}
+
+func (s *State) snapshot(event string) StateSnapshot {
+	snap := StateSnapshot{
+		Event:           event,
+		Round:           s.Round,
+		ClutchVsEnemies: s.clutchVsEnemies,
+	}
+	for id := range s.Tracked {
+		snap.Tracked = append(snap.Tracked, strconv.FormatUint(id, 10))
+	}
+	if len(s.kills) > 0 {
+		snap.Kills = steamIDMap(s.kills)
+	}
+	if len(s.mvps) > 0 {
+		snap.MVPs = steamIDMap(s.mvps)
+	}
+	if len(s.prevMVPs) > 0 {
+		snap.PrevMVPs = steamIDMap(s.prevMVPs)
+	}
+	if len(s.alive) > 0 {
+		snap.Alive = teamMap(s.alive)
+	}
+	if s.clutcher != 0 {
+		snap.Clutcher = strconv.FormatUint(s.clutcher, 10)
+	}
+	if s.clutchTeam != 0 {
+		snap.ClutchTeam = teamName(s.clutchTeam)
+	}
+	return snap
+}
+
+func WriteStateLog(path string, states []StateSnapshot) error {
+	data, err := json.MarshalIndent(states, "", "  ")
+	if err != nil {
+		return fmt.Errorf("analyser: marshal state log: %w", err)
+	}
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		return fmt.Errorf("analyser: write state log: %w", err)
+	}
+	return nil
+}
+
+func steamIDMap(m map[uint64]int) map[string]int {
+	out := make(map[string]int, len(m))
+	for id, v := range m {
+		out[strconv.FormatUint(id, 10)] = v
+	}
+	return out
+}
+
+func teamMap(m map[common.Team]int) map[string]int {
+	out := make(map[string]int, len(m))
+	for team, v := range m {
+		out[teamName(team)] = v
+	}
+	return out
+}
+
+func teamName(team common.Team) string {
+	switch team {
+	case common.TeamTerrorists:
+		return "T"
+	case common.TeamCounterTerrorists:
+		return "CT"
+	default:
+		return fmt.Sprintf("team_%d", team)
+	}
+}
+
+func (s *State) ResetRound(players []*common.Player) {
+	s.kills = make(map[uint64]int)
+	s.alive = make(map[common.Team]int)
+	s.clutcher = 0
+	s.clutchTeam = 0
+	s.clutchVsEnemies = 0
+	for _, p := range players {
+		if p.IsAlive() {
+			s.alive[p.Team]++
+		}
+	}
+}

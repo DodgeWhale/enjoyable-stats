@@ -9,6 +9,7 @@ require (
 	github.com/golang/snappy v1.0.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/websocket v1.4.2 // indirect
+	github.com/joho/godotenv v1.5.1 // indirect
 	github.com/markus-wa/demoinfocs-golang/v5 v5.2.0 // indirect
 	github.com/markus-wa/go-unassert v0.1.3 // indirect
 	github.com/markus-wa/gobitread v0.2.5-0.20241202000432-3c3e0bc797c6 // indirect

@@ -3,8 +3,8 @@ enjoyable-stats
 *.exe
 
 # Demo files (can be large)
+demos/
 *.dem
-/tmp/
 
 # Database
 *.db
