@@ -1,6 +1,6 @@
 ---
 title: Add more insights to the analysis engine
-status: IN PROGRESS
+status: DONE
 ---
 
 ## Ideas
@@ -22,6 +22,27 @@ status: IN PROGRESS
 - **Knife Kill** - tracked player kills an enemy with a knife. "Brought a knife to a gunfight. Somehow it worked."
 
 - **Knife Team Kill** - tracked player team-kills with a knife. "Backstabbed a teammate. Peak teamwork."
+
+### Bomb God message (existing insight)
+
+- **TriggerType:** `bomb_god` (no trigger logic change — threshold stays 3+ objective rounds)
+- **Discord (updated):** `"Actually played the objective unlike everyone else. (%d plants, %d defuses)"`
+
+**Problem:** Discord line has no counts; other insights include context in parentheses.
+
+**State fields (add):**
+- `bombPlants map[uint64]int` — match-level; increment on each `BombPlanted` for tracked player
+- `bombDefuses map[uint64]int` — match-level; increment on each `BombDefused` for tracked player
+
+Keep existing `bombObjectiveRounds` for the 3-round threshold (deduped per round). Plants and defuses are separate totals — a player with 2 plants and 1 defuse in 3 rounds shows `(2 plants, 1 defuse)`.
+
+**Logic:**
+1. In existing `BombPlanted` handler: after `recordBombObjective`, increment `state.bombPlants[player.SteamID64]`.
+2. In existing `BombDefused` handler: after `recordBombObjective`, increment `state.bombDefuses[player.SteamID64]`.
+3. `BombGod` trigger `Detail`: add `"plants"` and `"defuses"` alongside existing `"rounds"` / `"bomb_rounds"`.
+4. `bot/bot.go` `formatInsight` case `bomb_god`: read counts from `Detail` and append `(X plants, Y defuses)`.
+
+**Tests:** extend `TestBombGod_firesWhenCrossingThreeObjectiveRounds` to assert `Detail["plants"]` / `Detail["defuses"]`; add unit test or handler test if plant/defuse increments live in analyser.
 
 ## Implementation
 
@@ -282,6 +303,7 @@ Add cases to `formatInsight()`:
 | `flash_tax` | `😵 Consider playing anti-flash next match. (%d blinds)` |
 | `economy_terrorist` | `💸 Single-handedly wrecked the team economy. (round %d)` |
 | `defuse_interrupted` | `🔧 Almost had it. Twice.` (or include count if >2) |
+| `bomb_god` | `💣 Actually played the objective unlike everyone else. (%d plants, %d defuses)` — see **Bomb God message** above |
 | `knife_kill` | `🔪 Brought a knife to a gunfight. Somehow it worked. (round %d)` |
 | `knife_team_kill` | `🔪 Backstabbed a teammate. Peak teamwork. (round %d)` |
 

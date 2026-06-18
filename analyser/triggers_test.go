@@ -179,6 +179,8 @@ func TestBombGod_firesWhenCrossingThreeObjectiveRounds(t *testing.T) {
 		Round:               12,
 		Tracked:             map[uint64]bool{55: true},
 		bombObjectiveRounds: map[uint64][]int{55: {2, 7, 12}},
+		bombPlants:          map[uint64]int{55: 2},
+		bombDefuses:         map[uint64]int{55: 1},
 		prevBombGod:         map[uint64]int{55: 2},
 	}
 	got := BombGod{}.OnRoundEnd(s, events.RoundEnd{})
@@ -187,6 +189,14 @@ func TestBombGod_firesWhenCrossingThreeObjectiveRounds(t *testing.T) {
 	}
 	if got[0].TriggerType != "bomb_god" {
 		t.Errorf("TriggerType = %q, want %q", got[0].TriggerType, "bomb_god")
+	}
+	plants, _ := got[0].Detail["plants"].(int)
+	if plants != 2 {
+		t.Errorf("Detail[plants] = %d, want 2", plants)
+	}
+	defuses, _ := got[0].Detail["defuses"].(int)
+	if defuses != 1 {
+		t.Errorf("Detail[defuses] = %d, want 1", defuses)
 	}
 }
 

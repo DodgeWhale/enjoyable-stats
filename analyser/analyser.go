@@ -47,6 +47,8 @@ func (a *Analyser) Analyse(path string, tracked map[string]bool, debug bool) ([]
 		firstKills:          make(map[uint64]int),
 		firstDeaths:         make(map[uint64]int),
 		bombObjectiveRounds: make(map[uint64][]int),
+		bombPlants:          make(map[uint64]int),
+		bombDefuses:         make(map[uint64]int),
 		prevBombGod:         make(map[uint64]int),
 		bombMuleDeaths:      make(map[uint64]int),
 		instantTrades:       make(map[uint64]int),
@@ -243,6 +245,9 @@ func (a *Analyser) Analyse(path string, tracked map[string]bool, debug bool) ([]
 		}
 		state.Round = parser.GameState().TotalRoundsPlayed()
 		state.bombCarrier = 0
+		if e.Player != nil && state.Tracked[e.Player.SteamID64] {
+			state.bombPlants[e.Player.SteamID64]++
+		}
 		recordBomb(e.Player)
 		for _, t := range a.triggers {
 			if h, ok := t.(BombPlantedHook); ok {
@@ -281,6 +286,9 @@ func (a *Analyser) Analyse(path string, tracked map[string]bool, debug bool) ([]
 		state.Round = parser.GameState().TotalRoundsPlayed()
 		if e.Player != nil {
 			delete(state.activeDefusers, e.Player.SteamID64)
+			if state.Tracked[e.Player.SteamID64] {
+				state.bombDefuses[e.Player.SteamID64]++
+			}
 		}
 		recordBomb(e.Player)
 		record("bomb_defused")

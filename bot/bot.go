@@ -138,7 +138,18 @@ func formatInsight(ins analyser.Insight) string {
 		vs, _ := ins.Detail["vs"].(int)
 		return fmt.Sprintf("  🐌 Lurked into a 1v%d and chose death (round %d)", vs, ins.Round)
 	case "bomb_god":
-		return "  💣 Actually played the objective unlike everyone else."
+		plants, _ := ins.Detail["plants"].(int)
+		defuses, _ := ins.Detail["defuses"].(int)
+		msg := "  💣 Actually played the objective unlike everyone else."
+		switch {
+		case plants > 0 && defuses > 0:
+			msg += fmt.Sprintf(" (%d plants, %d defuses)", plants, defuses)
+		case plants > 0:
+			msg += fmt.Sprintf(" (%d plants)", plants)
+		case defuses > 0:
+			msg += fmt.Sprintf(" (%d defuses)", defuses)
+		}
+		return msg
 	case "entry_king":
 		count, _ := ins.Detail["first_kills"].(int)
 		return fmt.Sprintf("  🚪 Opened more doors than an estate agent (%d entry frags)", count)

@@ -36,6 +36,8 @@ type State struct {
 	firstKills          map[uint64]int
 	firstDeaths         map[uint64]int
 	bombObjectiveRounds map[uint64][]int
+	bombPlants          map[uint64]int
+	bombDefuses         map[uint64]int
 	prevBombGod         map[uint64]int
 
 	bombCarrier          uint64

@@ -184,7 +184,12 @@ func (BombGod) OnRoundEnd(s *State, e events.RoundEnd) []Insight {
 			SteamID:     strconv.FormatUint(id, 10),
 			TriggerType: "bomb_god",
 			Round:       s.Round,
-			Detail:      map[string]any{"rounds": count, "bomb_rounds": rounds},
+			Detail: map[string]any{
+				"rounds":      count,
+				"bomb_rounds": rounds,
+				"plants":      s.bombPlants[id],
+				"defuses":     s.bombDefuses[id],
+			},
 		})
 	}
 	return out
