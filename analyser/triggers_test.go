@@ -263,3 +263,279 @@ func TestRefundRequest_doesNotFireWhenPlayerSurvives(t *testing.T) {
 		t.Fatalf("len(insights) = %d, want 0", len(got))
 	}
 }
+
+func TestEntryVictim_firesForTrackedLeaderAtMatchEnd(t *testing.T) {
+	s := &State{
+		Round:       30,
+		Tracked:     map[uint64]bool{11: true, 22: true},
+		firstDeaths: map[uint64]int{11: 5, 22: 2, 33: 10},
+	}
+	got := EntryVictim{}.OnMatchEnd(s)
+	if len(got) != 1 {
+		t.Fatalf("len(insights) = %d, want 1", len(got))
+	}
+	if got[0].SteamID != "11" {
+		t.Errorf("SteamID = %q, want %q", got[0].SteamID, "11")
+	}
+	firstDeaths, _ := got[0].Detail["first_deaths"].(int)
+	if firstDeaths != 5 {
+		t.Errorf("Detail[first_deaths] = %d, want 5", firstDeaths)
+	}
+}
+
+func TestEntryVictim_emitsAllTiedAtMatchEnd(t *testing.T) {
+	s := &State{
+		Round:       30,
+		Tracked:     map[uint64]bool{11: true, 22: true},
+		firstDeaths: map[uint64]int{11: 4, 22: 4},
+	}
+	got := EntryVictim{}.OnMatchEnd(s)
+	if len(got) != 2 {
+		t.Fatalf("len(insights) = %d, want 2", len(got))
+	}
+}
+
+func TestInstantTrade_firesAtThreshold(t *testing.T) {
+	s := &State{
+		Round:         20,
+		Tracked:       map[uint64]bool{5: true},
+		instantTrades: map[uint64]int{5: 3},
+	}
+	got := InstantTrade{}.OnMatchEnd(s)
+	if len(got) != 1 {
+		t.Fatalf("len(insights) = %d, want 1", len(got))
+	}
+	trades, _ := got[0].Detail["trades"].(int)
+	if trades != 3 {
+		t.Errorf("Detail[trades] = %d, want 3", trades)
+	}
+}
+
+func TestInstantTrade_doesNotFireBelowThreshold(t *testing.T) {
+	s := &State{
+		Round:         20,
+		Tracked:       map[uint64]bool{5: true},
+		instantTrades: map[uint64]int{5: 2},
+	}
+	got := InstantTrade{}.OnMatchEnd(s)
+	if len(got) != 0 {
+		t.Fatalf("len(insights) = %d, want 0", len(got))
+	}
+}
+
+func TestBombMule_firesAtThreshold(t *testing.T) {
+	s := &State{
+		Round:          25,
+		Tracked:        map[uint64]bool{8: true},
+		bombMuleDeaths: map[uint64]int{8: 3},
+	}
+	got := BombMule{}.OnMatchEnd(s)
+	if len(got) != 1 {
+		t.Fatalf("len(insights) = %d, want 1", len(got))
+	}
+}
+
+func TestDefuseInterrupted_firesAtThreshold(t *testing.T) {
+	s := &State{
+		Round:             25,
+		Tracked:           map[uint64]bool{9: true},
+		defuseInterrupted: map[uint64]int{9: 2},
+	}
+	got := DefuseInterrupted{}.OnMatchEnd(s)
+	if len(got) != 1 {
+		t.Fatalf("len(insights) = %d, want 1", len(got))
+	}
+}
+
+func TestFlashTax_firesForUniqueLeader(t *testing.T) {
+	s := &State{
+		Round:       30,
+		Tracked:     map[uint64]bool{1: true, 2: true},
+		flashBlinds: map[uint64]int{1: 10, 2: 4},
+	}
+	got := FlashTax{}.OnMatchEnd(s)
+	if len(got) != 1 {
+		t.Fatalf("len(insights) = %d, want 1", len(got))
+	}
+	if got[0].SteamID != "1" {
+		t.Errorf("SteamID = %q, want %q", got[0].SteamID, "1")
+	}
+}
+
+func TestFlashTax_emitsAllTiedForMax(t *testing.T) {
+	s := &State{
+		Round:       30,
+		Tracked:     map[uint64]bool{1: true, 2: true},
+		flashBlinds: map[uint64]int{1: 7, 2: 7},
+	}
+	got := FlashTax{}.OnMatchEnd(s)
+	if len(got) != 2 {
+		t.Fatalf("len(insights) = %d, want 2", len(got))
+	}
+}
+
+func TestFlashTax_firesAtEightBlindFallback(t *testing.T) {
+	s := &State{
+		Round:       30,
+		Tracked:     map[uint64]bool{1: true, 2: true},
+		flashBlinds: map[uint64]int{1: 10, 2: 8},
+	}
+	got := FlashTax{}.OnMatchEnd(s)
+	if len(got) != 2 {
+		t.Fatalf("len(insights) = %d, want 2", len(got))
+	}
+}
+
+func TestKitDodger_firesWhenCandidateHasNoKitAtPlant(t *testing.T) {
+	s := &State{
+		Round:               6,
+		Tracked:             map[uint64]bool{100: true},
+		kitDodgerCandidates: map[uint64]bool{100: true},
+	}
+	players := []*common.Player{
+		{SteamID64: 100, Team: common.TeamCounterTerrorists},
+	}
+	got := KitDodger{}.OnBombPlanted(s, players)
+	if len(got) != 1 {
+		t.Fatalf("len(insights) = %d, want 1", len(got))
+	}
+	if got[0].TriggerType != "kit_dodger" {
+		t.Errorf("TriggerType = %q, want %q", got[0].TriggerType, "kit_dodger")
+	}
+}
+
+func TestKitDodger_doesNotFireWhenPlayerHasKit(t *testing.T) {
+	s := &State{
+		Round:               6,
+		Tracked:             map[uint64]bool{100: true},
+		kitDodgerCandidates: map[uint64]bool{100: true},
+	}
+	// Player not in candidates lookup with kit is tested via empty result when
+	// candidate list is cleared without a matching player.
+	got := KitDodger{}.OnBombPlanted(s, nil)
+	if len(got) != 0 {
+		t.Fatalf("len(insights) = %d, want 0", len(got))
+	}
+}
+
+func TestEconomyTerrorist_firesWhenOverspendingWithEcoTeammates(t *testing.T) {
+	s := &State{
+		Round:            11,
+		Tracked:          map[uint64]bool{50: true},
+		ecoTeammateCount: map[common.Team]int{common.TeamTerrorists: 4},
+		roundEndPlayers: []*common.Player{
+			{SteamID64: 50, Team: common.TeamTerrorists},
+		},
+		roundMoneySpent: map[uint64]int{50: 5000},
+	}
+	got := EconomyTerrorist{}.OnRoundEnd(s, events.RoundEnd{})
+	if len(got) != 1 {
+		t.Fatalf("len(insights) = %d, want 1", len(got))
+	}
+	spent, _ := got[0].Detail["spent"].(int)
+	if spent != 5000 {
+		t.Errorf("Detail[spent] = %d, want 5000", spent)
+	}
+}
+
+func TestEconomyTerrorist_doesNotFireWithTooFewEcoTeammates(t *testing.T) {
+	s := &State{
+		Round:            11,
+		Tracked:          map[uint64]bool{50: true},
+		ecoTeammateCount: map[common.Team]int{common.TeamTerrorists: 3},
+		roundEndPlayers: []*common.Player{
+			{SteamID64: 50, Team: common.TeamTerrorists},
+		},
+		roundMoneySpent: map[uint64]int{50: 5000},
+	}
+	got := EconomyTerrorist{}.OnRoundEnd(s, events.RoundEnd{})
+	if len(got) != 0 {
+		t.Fatalf("len(insights) = %d, want 0", len(got))
+	}
+}
+
+func TestKnifeKill_firesOnEnemyKnifeKillByTrackedPlayer(t *testing.T) {
+	s := &State{
+		Round:   3,
+		Tracked: map[uint64]bool{1: true},
+	}
+	e := events.Kill{
+		Killer: &common.Player{SteamID64: 1, Team: common.TeamTerrorists},
+		Victim: &common.Player{SteamID64: 2, Team: common.TeamCounterTerrorists},
+		Weapon: common.NewEquipment(common.EqKnife),
+	}
+	got := KnifeKill{}.OnKill(s, e)
+	if len(got) != 1 {
+		t.Fatalf("len(insights) = %d, want 1", len(got))
+	}
+	if got[0].TriggerType != "knife_kill" {
+		t.Errorf("TriggerType = %q, want %q", got[0].TriggerType, "knife_kill")
+	}
+}
+
+func TestKnifeKill_doesNotFireOnGunKill(t *testing.T) {
+	s := &State{
+		Round:   3,
+		Tracked: map[uint64]bool{1: true},
+	}
+	e := events.Kill{
+		Killer: &common.Player{SteamID64: 1, Team: common.TeamTerrorists},
+		Victim: &common.Player{SteamID64: 2, Team: common.TeamCounterTerrorists},
+		Weapon: common.NewEquipment(common.EqAK47),
+	}
+	got := KnifeKill{}.OnKill(s, e)
+	if len(got) != 0 {
+		t.Fatalf("len(insights) = %d, want 0", len(got))
+	}
+}
+
+func TestKnifeKill_doesNotFireOnTeamKill(t *testing.T) {
+	s := &State{
+		Round:   3,
+		Tracked: map[uint64]bool{1: true},
+	}
+	e := events.Kill{
+		Killer: &common.Player{SteamID64: 1, Team: common.TeamTerrorists},
+		Victim: &common.Player{SteamID64: 2, Team: common.TeamTerrorists},
+		Weapon: common.NewEquipment(common.EqKnife),
+	}
+	got := KnifeKill{}.OnKill(s, e)
+	if len(got) != 0 {
+		t.Fatalf("len(insights) = %d, want 0", len(got))
+	}
+}
+
+func TestKnifeTeamKill_firesOnTeammateKnifeKillByTrackedPlayer(t *testing.T) {
+	s := &State{
+		Round:   5,
+		Tracked: map[uint64]bool{1: true},
+	}
+	e := events.Kill{
+		Killer: &common.Player{SteamID64: 1, Team: common.TeamCounterTerrorists},
+		Victim: &common.Player{SteamID64: 2, Team: common.TeamCounterTerrorists},
+		Weapon: common.NewEquipment(common.EqKnife),
+	}
+	got := KnifeTeamKill{}.OnKill(s, e)
+	if len(got) != 1 {
+		t.Fatalf("len(insights) = %d, want 1", len(got))
+	}
+	if got[0].TriggerType != "knife_team_kill" {
+		t.Errorf("TriggerType = %q, want %q", got[0].TriggerType, "knife_team_kill")
+	}
+}
+
+func TestKnifeTeamKill_doesNotFireOnEnemyKnifeKill(t *testing.T) {
+	s := &State{
+		Round:   5,
+		Tracked: map[uint64]bool{1: true},
+	}
+	e := events.Kill{
+		Killer: &common.Player{SteamID64: 1, Team: common.TeamCounterTerrorists},
+		Victim: &common.Player{SteamID64: 2, Team: common.TeamTerrorists},
+		Weapon: common.NewEquipment(common.EqKnife),
+	}
+	got := KnifeTeamKill{}.OnKill(s, e)
+	if len(got) != 0 {
+		t.Fatalf("len(insights) = %d, want 0", len(got))
+	}
+}

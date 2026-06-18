@@ -16,7 +16,7 @@ DISCORD_CHANNEL_ID=your_channel_id_here
 ```
 
 - `DISCORD_TOKEN` — required. Your Discord bot token (from the Discord Developer Portal).
-- `DISCORD_CHANNEL_ID` — default channel for posting insights. Can be overridden per run with the `-channel` flag.
+- `DISCORD_CHANNEL_ID` — default channel for posting insights. Can be overridden per run with the `-channel` flag. Not required when using `-debug`.
 
 A missing `.env` is not fatal; if the environment variables are already set, the file is not needed. A missing `DISCORD_TOKEN` is always fatal.
 
@@ -45,6 +45,9 @@ go run . analyse -demo <url> [-channel <channel-id>]
 # From a local file (.dem or .dem.bz2)
 go run . analyse -file demos/match.dem [-channel <channel-id>]
 go run . analyse -file demos/match.dem.bz2
+
+# Print insights to the console instead of Discord (also writes a state log JSON file)
+go run . analyse -file demos/match.dem -debug
 ```
 
 | Flag | Required | Description |
@@ -52,6 +55,7 @@ go run . analyse -file demos/match.dem.bz2
 | `-demo` | one of `-demo` / `-file` | URL of the `.dem` or `.dem.bz2` demo file |
 | `-file` | one of `-demo` / `-file` | Local path to a `.dem` or `.dem.bz2` file (skips download) |
 | `-channel` | no | Discord channel ID (overrides `DISCORD_CHANNEL_ID` from config) |
+| `-debug` | no | Print insights to the console instead of Discord, and write a per-event state log JSON file |
 
 Both `.dem` and `.dem.bz2` URLs and local files are supported. `.gz` is not handled in Phase 1.
 

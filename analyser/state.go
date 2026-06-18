@@ -5,10 +5,16 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"time"
 
 	common "github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/common"
 	"github.com/oklog/ulid/v2"
 )
+
+type teammateDeath struct {
+	enemyKiller uint64
+	at          time.Duration
+}
 
 type State struct {
 	Round   int
@@ -28,8 +34,23 @@ type State struct {
 	awpKillWithOwn      map[uint64]bool
 	diedThisRound       map[uint64]bool
 	firstKills          map[uint64]int
+	firstDeaths         map[uint64]int
 	bombObjectiveRounds map[uint64][]int
 	prevBombGod         map[uint64]int
+
+	bombCarrier          uint64
+	bombMuleDeaths       map[uint64]int
+	currentTime          time.Duration
+	recentTeammateDeaths []teammateDeath
+	instantTrades        map[uint64]int
+	flashBlinds          map[uint64]int
+	kitDodgerCandidates  map[uint64]bool
+	ecoTeammateCount     map[common.Team]int
+	activeDefusers       map[uint64]bool
+	defuseInterrupted    map[uint64]int
+
+	roundEndPlayers []*common.Player
+	roundMoneySpent map[uint64]int
 }
 
 type StateSnapshot struct {
@@ -123,6 +144,11 @@ func (s *State) ResetRound(players []*common.Player) {
 	s.awpPurchaseWeapon = make(map[uint64]ulid.ULID)
 	s.awpKillWithOwn = make(map[uint64]bool)
 	s.diedThisRound = make(map[uint64]bool)
+	s.kitDodgerCandidates = make(map[uint64]bool)
+	s.ecoTeammateCount = make(map[common.Team]int)
+	s.activeDefusers = make(map[uint64]bool)
+	s.roundEndPlayers = nil
+	s.roundMoneySpent = make(map[uint64]int)
 	for _, p := range players {
 		if p.IsAlive() {
 			s.alive[p.Team]++

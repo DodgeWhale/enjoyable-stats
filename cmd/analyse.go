@@ -20,7 +20,7 @@ func runAnalyse(args []string) error {
 	demoURL := fs.String("demo", "", "URL of the demo file to download and analyse")
 	demoFile := fs.String("file", "", "Path to a local .dem or .dem.bz2 file")
 	channelFlag := fs.String("channel", "", "Discord channel ID to post insights (overrides config)")
-	debugFlag := fs.Bool("debug", false, "Write per-event state snapshots to a JSON file")
+	debugFlag := fs.Bool("debug", false, "Print insights to the console instead of Discord, and write per-event state snapshots to a JSON file")
 
 	if err := fs.Parse(args); err != nil {
 		return fmt.Errorf("analyse: parse flags: %w", err)
@@ -33,7 +33,13 @@ func runAnalyse(args []string) error {
 		return fmt.Errorf("analyse: -demo and -file are mutually exclusive")
 	}
 
-	cfg, err := config.Load()
+	var cfg *config.Config
+	var err error
+	if *debugFlag {
+		cfg, err = config.LoadOptional()
+	} else {
+		cfg, err = config.Load()
+	}
 	if err != nil {
 		return err
 	}
@@ -42,7 +48,7 @@ func runAnalyse(args []string) error {
 	if *channelFlag != "" {
 		channelID = *channelFlag
 	}
-	if channelID == "" {
+	if !*debugFlag && channelID == "" {
 		return fmt.Errorf("analyse: no channel ID provided (set DISCORD_CHANNEL_ID or use -channel)")
 	}
 
@@ -115,21 +121,33 @@ func runAnalyse(args []string) error {
 	}
 	saveDur := time.Since(saveStart)
 
-	b, err := bot.New(cfg.DiscordToken, nil)
-	if err != nil {
-		return fmt.Errorf("analyse: create discord session: %w", err)
-	}
-	postStart := time.Now()
-	if err := b.PostInsights(channelID, insights, mentions); err != nil {
-		return fmt.Errorf("analyse: post insights: %w", err)
-	}
-	postDur := time.Since(postStart)
-	if err := b.Close(); err != nil {
-		slog.Warn("failed to close discord session", "err", err)
+	var postDur time.Duration
+	if *debugFlag {
+		messages := bot.FormatInsights(insights, mentions)
+		if len(messages) == 0 {
+			fmt.Println("No insights.")
+		} else {
+			for _, msg := range messages {
+				fmt.Println(msg)
+			}
+		}
+	} else {
+		b, err := bot.New(cfg.DiscordToken, nil)
+		if err != nil {
+			return fmt.Errorf("analyse: create discord session: %w", err)
+		}
+		postStart := time.Now()
+		if err := b.PostInsights(channelID, insights, mentions); err != nil {
+			return fmt.Errorf("analyse: post insights: %w", err)
+		}
+		postDur = time.Since(postStart)
+		if err := b.Close(); err != nil {
+			slog.Warn("failed to close discord session", "err", err)
+		}
 	}
 
 	totalDur := time.Since(start)
-	slog.Info("analysis complete",
+	logArgs := []any{
 		"insights", len(insights),
 		"insights_saved", saved,
 		"tracked_players", len(trackedIDs),
@@ -137,8 +155,11 @@ func runAnalyse(args []string) error {
 		"prepare", prepareDur,
 		"parse", parseDur,
 		"save", saveDur,
-		"post", postDur,
 		"total", totalDur,
-	)
+	}
+	if !*debugFlag {
+		logArgs = append(logArgs, "post", postDur)
+	}
+	slog.Info("analysis complete", logArgs...)
 	return nil
 }

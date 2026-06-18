@@ -28,6 +28,10 @@ type MatchEndHook interface {
 	OnMatchEnd(s *State) []Insight
 }
 
+type BombPlantedHook interface {
+	OnBombPlanted(s *State, players []*common.Player) []Insight
+}
+
 // TeamKill fires when a tracked player kills a teammate.
 type TeamKill struct{}
 
@@ -249,6 +253,279 @@ func (RefundRequest) OnRoundEnd(s *State, e events.RoundEnd) []Insight {
 	return out
 }
 
+// KnifeKill fires when a tracked player kills an enemy with a knife.
+type KnifeKill struct{}
+
+func (KnifeKill) Name() string { return "knife_kill" }
+
+func (KnifeKill) OnKill(s *State, e events.Kill) []Insight {
+	if e.Killer == nil || e.Victim == nil {
+		return nil
+	}
+	if e.Killer.SteamID64 == e.Victim.SteamID64 {
+		return nil
+	}
+	if e.Killer.Team == e.Victim.Team {
+		return nil
+	}
+	if !s.Tracked[e.Killer.SteamID64] {
+		return nil
+	}
+	if !isKnife(e.Weapon) {
+		return nil
+	}
+	return []Insight{{
+		SteamID:     strconv.FormatUint(e.Killer.SteamID64, 10),
+		TriggerType: "knife_kill",
+		Round:       s.Round,
+		Detail: map[string]any{
+			"victim": strconv.FormatUint(e.Victim.SteamID64, 10),
+		},
+	}}
+}
+
+// KnifeTeamKill fires when a tracked player team-kills with a knife.
+type KnifeTeamKill struct{}
+
+func (KnifeTeamKill) Name() string { return "knife_team_kill" }
+
+func (KnifeTeamKill) OnKill(s *State, e events.Kill) []Insight {
+	if e.Killer == nil || e.Victim == nil {
+		return nil
+	}
+	if e.Killer.SteamID64 == e.Victim.SteamID64 {
+		return nil
+	}
+	if e.Killer.Team != e.Victim.Team {
+		return nil
+	}
+	if !s.Tracked[e.Killer.SteamID64] {
+		return nil
+	}
+	if !isKnife(e.Weapon) {
+		return nil
+	}
+	return []Insight{{
+		SteamID:     strconv.FormatUint(e.Killer.SteamID64, 10),
+		TriggerType: "knife_team_kill",
+		Round:       s.Round,
+		Detail: map[string]any{
+			"victim": strconv.FormatUint(e.Victim.SteamID64, 10),
+		},
+	}}
+}
+
 func isAWP(w *common.Equipment) bool {
 	return w != nil && w.Type == common.EqAWP
+}
+
+func isKnife(w *common.Equipment) bool {
+	return w != nil && w.Type == common.EqKnife
+}
+
+// EntryVictim fires at match end for tracked player(s) with the most opening deaths.
+type EntryVictim struct{}
+
+func (EntryVictim) Name() string { return "entry_victim" }
+
+func (EntryVictim) OnMatchEnd(s *State) []Insight {
+	max := 0
+	for id, count := range s.firstDeaths {
+		if !s.Tracked[id] {
+			continue
+		}
+		if count > max {
+			max = count
+		}
+	}
+	if max == 0 {
+		return nil
+	}
+
+	var out []Insight
+	for id, count := range s.firstDeaths {
+		if !s.Tracked[id] || count != max {
+			continue
+		}
+		out = append(out, Insight{
+			SteamID:     strconv.FormatUint(id, 10),
+			TriggerType: "entry_victim",
+			Round:       s.Round,
+			Detail:      map[string]any{"first_deaths": count},
+		})
+	}
+	return out
+}
+
+// InstantTrade fires at match end when a tracked player gets 3+ instant trades.
+type InstantTrade struct{}
+
+func (InstantTrade) Name() string { return "instant_trade" }
+
+func (InstantTrade) OnMatchEnd(s *State) []Insight {
+	var out []Insight
+	for id, count := range s.instantTrades {
+		if !s.Tracked[id] || count < 3 {
+			continue
+		}
+		out = append(out, Insight{
+			SteamID:     strconv.FormatUint(id, 10),
+			TriggerType: "instant_trade",
+			Round:       s.Round,
+			Detail:      map[string]any{"trades": count},
+		})
+	}
+	return out
+}
+
+// BombMule fires at match end when a tracked player dies with the bomb 3+ times.
+type BombMule struct{}
+
+func (BombMule) Name() string { return "bomb_mule" }
+
+func (BombMule) OnMatchEnd(s *State) []Insight {
+	var out []Insight
+	for id, count := range s.bombMuleDeaths {
+		if !s.Tracked[id] || count < 3 {
+			continue
+		}
+		out = append(out, Insight{
+			SteamID:     strconv.FormatUint(id, 10),
+			TriggerType: "bomb_mule",
+			Round:       s.Round,
+			Detail:      map[string]any{"deaths": count},
+		})
+	}
+	return out
+}
+
+// DefuseInterrupted fires at match end when a tracked player is killed while defusing 2+ times.
+type DefuseInterrupted struct{}
+
+func (DefuseInterrupted) Name() string { return "defuse_interrupted" }
+
+func (DefuseInterrupted) OnMatchEnd(s *State) []Insight {
+	var out []Insight
+	for id, count := range s.defuseInterrupted {
+		if !s.Tracked[id] || count < 2 {
+			continue
+		}
+		out = append(out, Insight{
+			SteamID:     strconv.FormatUint(id, 10),
+			TriggerType: "defuse_interrupted",
+			Round:       s.Round,
+			Detail:      map[string]any{"interruptions": count},
+		})
+	}
+	return out
+}
+
+// FlashTax fires at match end for the most flashed tracked player(s), or anyone with 8+ blinds.
+type FlashTax struct{}
+
+func (FlashTax) Name() string { return "flash_tax" }
+
+func (FlashTax) OnMatchEnd(s *State) []Insight {
+	max := 0
+	for id, count := range s.flashBlinds {
+		if !s.Tracked[id] {
+			continue
+		}
+		if count > max {
+			max = count
+		}
+	}
+
+	emitted := make(map[uint64]bool)
+	var out []Insight
+
+	if max > 0 {
+		for id, count := range s.flashBlinds {
+			if !s.Tracked[id] || count != max {
+				continue
+			}
+			emitted[id] = true
+			out = append(out, Insight{
+				SteamID:     strconv.FormatUint(id, 10),
+				TriggerType: "flash_tax",
+				Round:       s.Round,
+				Detail:      map[string]any{"blinds": count},
+			})
+		}
+	}
+
+	for id, count := range s.flashBlinds {
+		if !s.Tracked[id] || count < 8 || emitted[id] {
+			continue
+		}
+		out = append(out, Insight{
+			SteamID:     strconv.FormatUint(id, 10),
+			TriggerType: "flash_tax",
+			Round:       s.Round,
+			Detail:      map[string]any{"blinds": count},
+		})
+	}
+	return out
+}
+
+// KitDodger fires when a tracked CT had kit money but no defuse kit when the bomb was planted.
+type KitDodger struct{}
+
+func (KitDodger) Name() string { return "kit_dodger" }
+
+func (KitDodger) OnBombPlanted(s *State, players []*common.Player) []Insight {
+	if len(s.kitDodgerCandidates) == 0 {
+		return nil
+	}
+	byID := make(map[uint64]*common.Player, len(players))
+	for _, p := range players {
+		byID[p.SteamID64] = p
+	}
+
+	var out []Insight
+	for id := range s.kitDodgerCandidates {
+		p, ok := byID[id]
+		if !ok || p.HasDefuseKit() {
+			continue
+		}
+		out = append(out, Insight{
+			SteamID:     strconv.FormatUint(id, 10),
+			TriggerType: "kit_dodger",
+			Round:       s.Round,
+		})
+	}
+	s.kitDodgerCandidates = make(map[uint64]bool)
+	return out
+}
+
+// EconomyTerrorist fires when a tracked player overspends while teammates are on eco.
+type EconomyTerrorist struct{}
+
+func (EconomyTerrorist) Name() string { return "economy_terrorist" }
+
+func (EconomyTerrorist) OnRoundEnd(s *State, e events.RoundEnd) []Insight {
+	var out []Insight
+	for _, p := range s.roundEndPlayers {
+		if !s.Tracked[p.SteamID64] {
+			continue
+		}
+		spent := s.roundMoneySpent[p.SteamID64]
+		if spent < 4500 {
+			continue
+		}
+		ecoTeammates := s.ecoTeammateCount[p.Team] - 1
+		if ecoTeammates < 3 {
+			continue
+		}
+		out = append(out, Insight{
+			SteamID:     strconv.FormatUint(p.SteamID64, 10),
+			TriggerType: "economy_terrorist",
+			Round:       s.Round,
+			Detail: map[string]any{
+				"spent":          spent,
+				"eco_teammates": ecoTeammates,
+			},
+		})
+	}
+	return out
 }

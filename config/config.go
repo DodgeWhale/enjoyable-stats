@@ -25,3 +25,12 @@ func Load() (*Config, error) {
 		DiscordChannelID: os.Getenv("DISCORD_CHANNEL_ID"),
 	}, nil
 }
+
+// LoadOptional loads config without requiring DISCORD_TOKEN (for local debug runs).
+func LoadOptional() (*Config, error) {
+	_ = godotenv.Load()
+	return &Config{
+		DiscordToken:     os.Getenv("DISCORD_TOKEN"),
+		DiscordChannelID: os.Getenv("DISCORD_CHANNEL_ID"),
+	}, nil
+}
