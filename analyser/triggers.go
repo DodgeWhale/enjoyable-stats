@@ -65,6 +65,29 @@ func (TeamKill) OnKill(s *State, e events.Kill) []Insight {
 	}}
 }
 
+// MultiKill fires when a tracked player ends the round on exactly 4 kills.
+// It checks at round end rather than on the 4th kill so a 5-kill round emits
+// only an Ace, never a redundant 4k for the same player and round.
+type MultiKill struct{}
+
+func (MultiKill) Name() string { return "multi_kill" }
+
+func (MultiKill) OnRoundEnd(s *State, e events.RoundEnd) []Insight {
+	var out []Insight
+	for id, kills := range s.kills {
+		if !s.Tracked[id] || kills != 4 {
+			continue
+		}
+		out = append(out, Insight{
+			SteamID:     strconv.FormatUint(id, 10),
+			TriggerType: "multi_kill",
+			Round:       s.Round,
+			Detail:      map[string]any{"kills": 4},
+		})
+	}
+	return out
+}
+
 // Ace fires when a tracked player reaches 5 kills in a round.
 type Ace struct{}
 
@@ -328,6 +351,129 @@ func isKnife(w *common.Equipment) bool {
 	return w != nil && w.Type == common.EqKnife
 }
 
+func isZeus(w *common.Equipment) bool {
+	return w != nil && w.Type == common.EqZeus
+}
+
+// ZeusKill fires when a tracked player kills an enemy with a Zeus.
+type ZeusKill struct{}
+
+func (ZeusKill) Name() string { return "zeus_kill" }
+
+func (ZeusKill) OnKill(s *State, e events.Kill) []Insight {
+	if e.Killer == nil || e.Victim == nil {
+		return nil
+	}
+	if e.Killer.SteamID64 == e.Victim.SteamID64 {
+		return nil
+	}
+	if e.Killer.Team == e.Victim.Team {
+		return nil
+	}
+	if !s.Tracked[e.Killer.SteamID64] {
+		return nil
+	}
+	if !isZeus(e.Weapon) {
+		return nil
+	}
+	return []Insight{{
+		SteamID:     strconv.FormatUint(e.Killer.SteamID64, 10),
+		TriggerType: "zeus_kill",
+		Round:       s.Round,
+		Detail: map[string]any{
+			"victim": strconv.FormatUint(e.Victim.SteamID64, 10),
+		},
+	}}
+}
+
+// StyleKill fires when a tracked player gets a flashy enemy kill.
+type StyleKill struct{}
+
+func (StyleKill) Name() string { return "style_kill" }
+
+func (StyleKill) OnKill(s *State, e events.Kill) []Insight {
+	if e.Killer == nil || e.Victim == nil {
+		return nil
+	}
+	if e.Killer.SteamID64 == e.Victim.SteamID64 {
+		return nil
+	}
+	if e.Killer.Team == e.Victim.Team {
+		return nil
+	}
+	if !s.Tracked[e.Killer.SteamID64] {
+		return nil
+	}
+
+	detail := make(map[string]any)
+	if e.IsWallBang() {
+		detail["wallbang"] = true
+	}
+	if e.NoScope && isAWP(e.Weapon) {
+		detail["noscope"] = true
+	}
+	if len(detail) == 0 {
+		return nil
+	}
+	return []Insight{{
+		SteamID:     strconv.FormatUint(e.Killer.SteamID64, 10),
+		TriggerType: "style_kill",
+		Round:       s.Round,
+		Detail:      detail,
+	}}
+}
+
+// FlashAssist fires when a tracked player flash-assists an enemy kill.
+type FlashAssist struct{}
+
+func (FlashAssist) Name() string { return "flash_assist" }
+
+func (FlashAssist) OnKill(s *State, e events.Kill) []Insight {
+	if e.Victim == nil || e.Killer == nil || e.Killer.Team == e.Victim.Team {
+		return nil
+	}
+	flash, ok := s.recentEnemyFlashes[e.Victim.SteamID64]
+	if !ok {
+		return nil
+	}
+	if s.currentTime-flash.at > flashAssistWindow {
+		return nil
+	}
+	if !s.Tracked[flash.flasher] {
+		return nil
+	}
+	return []Insight{{
+		SteamID:     strconv.FormatUint(flash.flasher, 10),
+		TriggerType: "flash_assist",
+		Round:       s.Round,
+		Detail: map[string]any{
+			"victim": strconv.FormatUint(e.Victim.SteamID64, 10),
+		},
+	}}
+}
+
+// TeamFlash fires at match end when a tracked player blinds teammates repeatedly.
+type TeamFlash struct{}
+
+func (TeamFlash) Name() string { return "team_flash" }
+
+func (TeamFlash) OnMatchEnd(s *State) []Insight {
+	const threshold = 3
+	var out []Insight
+	for id, count := range s.teamFlashBlinds {
+		if !s.Tracked[id] || count < threshold {
+			continue
+		}
+		out = append(out, Insight{
+			SteamID:     strconv.FormatUint(id, 10),
+			TriggerType: "team_flash",
+			Round:       s.Round,
+			Detail:      map[string]any{"blinds": count},
+		})
+	}
+	return out
+}
+
 // EntryVictim fires at match end for tracked player(s) with the most opening deaths.
 type EntryVictim struct{}
 
@@ -527,7 +673,7 @@ func (EconomyTerrorist) OnRoundEnd(s *State, e events.RoundEnd) []Insight {
 			TriggerType: "economy_terrorist",
 			Round:       s.Round,
 			Detail: map[string]any{
-				"spent":          spent,
+				"spent":         spent,
 				"eco_teammates": ecoTeammates,
 			},
 		})

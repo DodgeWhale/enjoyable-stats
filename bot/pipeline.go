@@ -33,10 +33,11 @@ func (b *Bot) RunAnalysis(demoURL, channelID string) error {
 
 	slog.Info("parsing demo", "tracked_players", len(trackedIDs))
 	parseStart := time.Now()
-	insights, _, err := analyser.New().Analyse(demoPath, trackedIDs, false)
+	result, err := analyser.New().Analyse(demoPath, trackedIDs, false)
 	if err != nil {
 		return fmt.Errorf("pipeline: parse demo: %w", err)
 	}
+	insights := result.Insights
 	slog.Info("demo parsed", "insights", len(insights), "duration", time.Since(parseStart))
 
 	for _, ins := range insights {
@@ -45,7 +46,7 @@ func (b *Bot) RunAnalysis(demoURL, channelID string) error {
 		}
 	}
 
-	if err := b.PostInsights(channelID, insights, mentions); err != nil {
+	if err := b.PostInsights(channelID, insights, mentions, demoPath, result.MapName, result.Rounds); err != nil {
 		return fmt.Errorf("pipeline: post insights: %w", err)
 	}
 

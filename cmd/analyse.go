@@ -95,19 +95,29 @@ func runAnalyse(args []string) error {
 	slog.Info("parsing demo", "tracked_players", len(trackedIDs), "debug", *debugFlag)
 	parseStart := time.Now()
 	a := analyser.New()
-	insights, stateLog, err := a.Analyse(demoPath, trackedIDs, *debugFlag)
+	result, err := a.Analyse(demoPath, trackedIDs, *debugFlag)
 	if err != nil {
 		return fmt.Errorf("analyse: parse demo: %w", err)
 	}
+	insights := result.Insights
 	parseDur := time.Since(parseStart)
 	slog.Info("demo parsed", "insights", len(insights), "duration", parseDur)
 
+	recap := analyser.BuildRecap(insights, demoPath, result.MapName, result.Rounds)
+	recap.Trace = append(result.NameTrace, recap.Trace...)
+
 	if *debugFlag {
 		statePath := strings.TrimSuffix(demoPath, ".dem") + ".state.json"
-		if err := analyser.WriteStateLog(statePath, stateLog); err != nil {
+		if err := analyser.WriteStateLog(statePath, result.StateLog); err != nil {
 			return fmt.Errorf("analyse: write state log: %w", err)
 		}
-		slog.Info("state log written", "path", statePath, "snapshots", len(stateLog))
+		slog.Info("state log written", "path", statePath, "snapshots", len(result.StateLog))
+
+		recapPath := strings.TrimSuffix(demoPath, ".dem") + ".recap.json"
+		if err := analyser.WriteRecapLog(recapPath, recap); err != nil {
+			return fmt.Errorf("analyse: write recap log: %w", err)
+		}
+		slog.Info("recap log written", "path", recapPath)
 	}
 
 	saveStart := time.Now()
@@ -123,7 +133,7 @@ func runAnalyse(args []string) error {
 
 	var postDur time.Duration
 	if *debugFlag {
-		messages := bot.FormatInsights(insights, mentions)
+		messages := bot.FormatRecap(recap, mentions, true)
 		if len(messages) == 0 {
 			fmt.Println("No insights.")
 		} else {
@@ -131,13 +141,14 @@ func runAnalyse(args []string) error {
 				fmt.Println(msg)
 			}
 		}
+		fmt.Print(bot.FormatRecapDebug(recap))
 	} else {
 		b, err := bot.New(cfg.DiscordToken, nil)
 		if err != nil {
 			return fmt.Errorf("analyse: create discord session: %w", err)
 		}
 		postStart := time.Now()
-		if err := b.PostInsights(channelID, insights, mentions); err != nil {
+		if err := b.PostInsights(channelID, insights, mentions, demoPath, result.MapName, result.Rounds); err != nil {
 			return fmt.Errorf("analyse: post insights: %w", err)
 		}
 		postDur = time.Since(postStart)

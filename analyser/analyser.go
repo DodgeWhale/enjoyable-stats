@@ -9,6 +9,7 @@ import (
 	demoinfocs "github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs"
 	common "github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/common"
 	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/events"
+	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/msg"
 )
 
 type Analyser struct {
@@ -18,19 +19,19 @@ type Analyser struct {
 func New() *Analyser {
 	return &Analyser{
 		triggers: []Trigger{
-			TeamKill{}, Ace{}, Clutch{}, MVP{},
+			TeamKill{}, Ace{}, MultiKill{}, Clutch{}, MVP{},
 			LurkerTax{}, BombGod{}, EntryKing{}, RefundRequest{},
 			EntryVictim{}, InstantTrade{}, BombMule{}, DefuseInterrupted{},
-			FlashTax{}, KitDodger{}, EconomyTerrorist{},
-			KnifeKill{}, KnifeTeamKill{},
+			FlashTax{}, FlashAssist{}, TeamFlash{}, KitDodger{}, EconomyTerrorist{},
+			KnifeKill{}, KnifeTeamKill{}, ZeusKill{}, StyleKill{},
 		},
 	}
 }
 
-func (a *Analyser) Analyse(path string, tracked map[string]bool, debug bool) ([]Insight, []StateSnapshot, error) {
+func (a *Analyser) Analyse(path string, tracked map[string]bool, debug bool) (Result, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, nil, fmt.Errorf("analyser: open demo: %w", err)
+		return Result{}, fmt.Errorf("analyser: open demo: %w", err)
 	}
 	defer f.Close()
 
@@ -39,6 +40,7 @@ func (a *Analyser) Analyse(path string, tracked map[string]bool, debug bool) ([]
 
 	state := State{
 		Tracked:             make(map[uint64]bool, len(tracked)),
+		names:               make(map[uint64]string),
 		kills:               make(map[uint64]int),
 		mvps:                make(map[uint64]int),
 		prevMVPs:            make(map[uint64]int),
@@ -53,6 +55,8 @@ func (a *Analyser) Analyse(path string, tracked map[string]bool, debug bool) ([]
 		bombMuleDeaths:      make(map[uint64]int),
 		instantTrades:       make(map[uint64]int),
 		flashBlinds:         make(map[uint64]int),
+		teamFlashBlinds:     make(map[uint64]int),
+		recentEnemyFlashes:  make(map[uint64]recentFlash),
 		defuseInterrupted:   make(map[uint64]int),
 	}
 	for id := range tracked {
@@ -64,11 +68,16 @@ func (a *Analyser) Analyse(path string, tracked map[string]bool, debug bool) ([]
 
 	var insights []Insight
 	var stateLog []StateSnapshot
+	var mapName string
 	record := func(event string) {
 		if debug {
 			stateLog = append(stateLog, state.snapshot(event))
 		}
 	}
+
+	parser.RegisterNetMessageHandler(func(m *msg.CDemoFileHeader) {
+		mapName = m.GetMapName()
+	})
 
 	parser.RegisterEventHandler(func(e events.RoundStart) {
 		if parser.GameState().IsWarmupPeriod() {
@@ -90,6 +99,13 @@ func (a *Analyser) Analyse(path string, tracked map[string]bool, debug bool) ([]
 		}
 		state.Round = parser.GameState().TotalRoundsPlayed()
 		state.currentTime = parser.CurrentTime()
+
+		if e.Killer != nil {
+			state.recordName(e.Killer)
+		}
+		if e.Victim != nil {
+			state.recordName(e.Victim)
+		}
 
 		if e.Killer != nil {
 			if !state.roundHasKill {
@@ -194,9 +210,24 @@ func (a *Analyser) Analyse(path string, tracked map[string]bool, debug bool) ([]
 			return
 		}
 		state.Round = parser.GameState().TotalRoundsPlayed()
+		state.currentTime = parser.CurrentTime()
 		if e.Player == nil || e.Attacker == nil {
 			return
 		}
+		state.recordName(e.Player)
+		state.recordName(e.Attacker)
+
+		if e.Attacker.Team != e.Player.Team && e.FlashDuration() >= time.Second {
+			state.recentEnemyFlashes[e.Player.SteamID64] = recentFlash{
+				flasher: e.Attacker.SteamID64,
+				at:      state.currentTime,
+			}
+		}
+
+		if state.Tracked[e.Attacker.SteamID64] && e.Attacker.Team == e.Player.Team && e.FlashDuration() >= time.Second {
+			state.teamFlashBlinds[e.Attacker.SteamID64]++
+		}
+
 		if !state.Tracked[e.Player.SteamID64] {
 			return
 		}
@@ -245,6 +276,9 @@ func (a *Analyser) Analyse(path string, tracked map[string]bool, debug bool) ([]
 		}
 		state.Round = parser.GameState().TotalRoundsPlayed()
 		state.bombCarrier = 0
+		if e.Player != nil {
+			state.recordName(e.Player)
+		}
 		if e.Player != nil && state.Tracked[e.Player.SteamID64] {
 			state.bombPlants[e.Player.SteamID64]++
 		}
@@ -300,6 +334,9 @@ func (a *Analyser) Analyse(path string, tracked map[string]bool, debug bool) ([]
 		}
 		state.Round = parser.GameState().TotalRoundsPlayed()
 		state.roundEndPlayers = parser.GameState().Participants().Playing()
+		for _, p := range state.roundEndPlayers {
+			state.recordName(p)
+		}
 		state.roundMoneySpent = make(map[uint64]int)
 		for _, p := range state.roundEndPlayers {
 			if !state.Tracked[p.SteamID64] {
@@ -325,7 +362,7 @@ func (a *Analyser) Analyse(path string, tracked map[string]bool, debug bool) ([]
 	})
 
 	if err := parser.ParseToEnd(); err != nil {
-		return nil, nil, fmt.Errorf("analyser: parse: %w", err)
+		return Result{}, fmt.Errorf("analyser: parse: %w", err)
 	}
 
 	for _, t := range a.triggers {
@@ -334,10 +371,19 @@ func (a *Analyser) Analyse(path string, tracked map[string]bool, debug bool) ([]
 		}
 	}
 
-	return insights, stateLog, nil
+	nameTrace := enrichInsights(insights, state.names)
+
+	return Result{
+		Insights:  insights,
+		MapName:   mapName,
+		Rounds:    parser.GameState().TotalRoundsPlayed(),
+		StateLog:  stateLog,
+		NameTrace: nameTrace,
+	}, nil
 }
 
 const instantTradeWindow = 3 * time.Second
+const flashAssistWindow = 5 * time.Second
 
 func teamHasTrackedPlayer(s *State, team common.Team, playing []*common.Player) bool {
 	for _, p := range playing {

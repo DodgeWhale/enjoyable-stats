@@ -3,7 +3,6 @@ package bot
 import (
 	"fmt"
 	"log/slog"
-	"strings"
 
 	"github.com/DodgeWhale/enjoyable-stats/analyser"
 	"github.com/DodgeWhale/enjoyable-stats/db"
@@ -67,140 +66,20 @@ func (b *Bot) onInteraction(s *discordgo.Session, i *discordgo.InteractionCreate
 	}
 }
 
-// FormatInsights groups insights by player and returns one formatted message per player.
+// FormatInsights builds a ranked recap from raw insights.
 // players maps steamID → discordUserID for @mentions.
-func FormatInsights(insights []analyser.Insight, players map[string]string) []string {
-	if len(insights) == 0 {
-		return nil
-	}
-
-	grouped := make(map[string][]analyser.Insight)
-	for _, ins := range insights {
-		grouped[ins.SteamID] = append(grouped[ins.SteamID], ins)
-	}
-
-	messages := make([]string, 0, len(grouped))
-	for steamID, playerInsights := range grouped {
-		messages = append(messages, formatPlayerInsights(steamID, playerInsights, players))
-	}
-	return messages
+func FormatInsights(insights []analyser.Insight, players map[string]string, demoID, mapName string, rounds int) []string {
+	recap := analyser.BuildRecap(insights, demoID, mapName, rounds)
+	return FormatRecap(recap, players, false)
 }
 
-func formatPlayerInsights(steamID string, playerInsights []analyser.Insight, players map[string]string) string {
-	mention := steamID
-	if discordID, ok := players[steamID]; ok {
-		mention = "<@" + discordID + ">"
-	}
-
-	var sb strings.Builder
-	sb.WriteString(mention)
-	sb.WriteString(" highlights:\n")
-
-	var mvpIns []analyser.Insight
-	for _, ins := range playerInsights {
-		if ins.TriggerType == "mvp" {
-			mvpIns = append(mvpIns, ins)
-			continue
-		}
-		sb.WriteString(formatInsight(ins))
-		sb.WriteString("\n")
-	}
-	if len(mvpIns) > 0 {
-		sb.WriteString(formatMVPInsights(mvpIns))
-		sb.WriteString("\n")
-	}
-	return sb.String()
-}
-
-// PostInsights formats and sends insights to the given channel.
+// PostInsights formats and sends the recap to the given channel.
 // players maps steamID → discordUserID for @mentions.
-func (b *Bot) PostInsights(channelID string, insights []analyser.Insight, players map[string]string) error {
-	for _, msg := range FormatInsights(insights, players) {
+func (b *Bot) PostInsights(channelID string, insights []analyser.Insight, players map[string]string, demoID, mapName string, rounds int) error {
+	for _, msg := range FormatInsights(insights, players, demoID, mapName, rounds) {
 		if _, err := b.session.ChannelMessageSend(channelID, msg); err != nil {
 			return fmt.Errorf("bot: post insights: %w", err)
 		}
 	}
 	return nil
-}
-
-func formatInsight(ins analyser.Insight) string {
-	switch ins.TriggerType {
-	case "ace":
-		return fmt.Sprintf("  🎯 ACE in round %d", ins.Round)
-	case "team_kill":
-		victim, _ := ins.Detail["victim"].(string)
-		weapon, _ := ins.Detail["weapon"].(string)
-		return fmt.Sprintf("  💀 Team kill in round %d (victim: %s, weapon: %s)", ins.Round, victim, weapon)
-	case "clutch":
-		vs, _ := ins.Detail["vs"].(int)
-		return fmt.Sprintf("  🏆 1v%d clutch in round %d", vs, ins.Round)
-	case "lurker_tax":
-		vs, _ := ins.Detail["vs"].(int)
-		return fmt.Sprintf("  🐌 Lurked into a 1v%d and chose death (round %d)", vs, ins.Round)
-	case "bomb_god":
-		plants, _ := ins.Detail["plants"].(int)
-		defuses, _ := ins.Detail["defuses"].(int)
-		msg := "  💣 Actually played the objective unlike everyone else."
-		switch {
-		case plants > 0 && defuses > 0:
-			msg += fmt.Sprintf(" (%d plants, %d defuses)", plants, defuses)
-		case plants > 0:
-			msg += fmt.Sprintf(" (%d plants)", plants)
-		case defuses > 0:
-			msg += fmt.Sprintf(" (%d defuses)", defuses)
-		}
-		return msg
-	case "entry_king":
-		count, _ := ins.Detail["first_kills"].(int)
-		return fmt.Sprintf("  🚪 Opened more doors than an estate agent (%d entry frags)", count)
-	case "refund_request":
-		return fmt.Sprintf("  💸 £4,750 decoy grenade (round %d)", ins.Round)
-	case "entry_victim":
-		count, _ := ins.Detail["first_deaths"].(int)
-		return fmt.Sprintf("  🚪 Opened the site - for the other team. (%d first deaths)", count)
-	case "bomb_mule":
-		count, _ := ins.Detail["deaths"].(int)
-		return fmt.Sprintf("  💣 Reliable courier, unreliable survivor. (%d bomb deaths)", count)
-	case "instant_trade":
-		count, _ := ins.Detail["trades"].(int)
-		return fmt.Sprintf("  ⚡ Refrag speed: professional. (%d instant trades)", count)
-	case "flash_tax":
-		count, _ := ins.Detail["blinds"].(int)
-		return fmt.Sprintf("  😵 Consider playing anti-flash next match. (%d blinds)", count)
-	case "kit_dodger":
-		return fmt.Sprintf("  💸 Had the money. Skipped the kit. Paid in full. (round %d)", ins.Round)
-	case "economy_terrorist":
-		return fmt.Sprintf("  💸 Single-handedly wrecked the team economy. (round %d)", ins.Round)
-	case "defuse_interrupted":
-		count, _ := ins.Detail["interruptions"].(int)
-		if count > 2 {
-			return fmt.Sprintf("  🔧 Almost had it. Twice. (%d times)", count)
-		}
-		return "  🔧 Almost had it. Twice."
-	case "knife_kill":
-		return fmt.Sprintf("  🔪 Brought a knife to a gunfight. Somehow it worked. (round %d)", ins.Round)
-	case "knife_team_kill":
-		return fmt.Sprintf("  🔪 Backstabbed a teammate. Peak teamwork. (round %d)", ins.Round)
-	default:
-		return fmt.Sprintf("  [%s] round %d", ins.TriggerType, ins.Round)
-	}
-}
-
-// formatMVPInsights consolidates one or more MVP insights for a single player
-// into one line listing every round they earned an MVP.
-func formatMVPInsights(ins []analyser.Insight) string {
-	last := ins[len(ins)-1]
-	count, _ := last.Detail["mvps"].(int)
-	rounds, _ := last.Detail["rounds"].([]int)
-
-	roundStrs := make([]string, len(rounds))
-	for i, r := range rounds {
-		roundStrs[i] = fmt.Sprintf("%d", r)
-	}
-
-	label := "round"
-	if len(roundStrs) > 1 {
-		label = "rounds"
-	}
-	return fmt.Sprintf("  ⭐ %d MVPs (%s %s)", count, label, strings.Join(roundStrs, ", "))
 }

@@ -16,9 +16,15 @@ type teammateDeath struct {
 	at          time.Duration
 }
 
+type recentFlash struct {
+	flasher uint64
+	at      time.Duration
+}
+
 type State struct {
 	Round   int
 	Tracked map[uint64]bool
+	names   map[uint64]string
 
 	kills           map[uint64]int
 	mvps            map[uint64]int
@@ -46,6 +52,8 @@ type State struct {
 	recentTeammateDeaths []teammateDeath
 	instantTrades        map[uint64]int
 	flashBlinds          map[uint64]int
+	teamFlashBlinds      map[uint64]int
+	recentEnemyFlashes   map[uint64]recentFlash
 	kitDodgerCandidates  map[uint64]bool
 	ecoTeammateCount     map[common.Team]int
 	activeDefusers       map[uint64]bool
@@ -96,6 +104,114 @@ func (s *State) snapshot(event string) StateSnapshot {
 		snap.ClutchTeam = teamName(s.clutchTeam)
 	}
 	return snap
+}
+
+type recapJSON struct {
+	DemoID   string               `json:"demo_id"`
+	Map      string               `json:"map"`
+	Rounds   int                  `json:"rounds"`
+	Headline *insightJSON         `json:"headline"`
+	Public   []insightJSON        `json:"public"`
+	Dropped  []droppedInsightJSON `json:"dropped"`
+	Trace    []DebugEvent         `json:"trace"`
+}
+
+type insightJSON struct {
+	SteamID     string         `json:"steam_id"`
+	PlayerName  string         `json:"player_name"`
+	TriggerType string         `json:"trigger_type"`
+	Round       int            `json:"round"`
+	Score       int            `json:"score"`
+	Detail      map[string]any `json:"detail,omitempty"`
+}
+
+type droppedInsightJSON struct {
+	insightJSON
+	Reason string `json:"reason"`
+}
+
+func WriteRecapLog(path string, recap Recap) error {
+	data, err := json.MarshalIndent(recapToJSON(recap), "", "  ")
+	if err != nil {
+		return fmt.Errorf("analyser: marshal recap log: %w", err)
+	}
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		return fmt.Errorf("analyser: write recap log: %w", err)
+	}
+	return nil
+}
+
+func recapToJSON(recap Recap) recapJSON {
+	out := recapJSON{
+		DemoID: recap.DemoID,
+		Map:    recap.MapName,
+		Rounds: recap.Rounds,
+		Trace:  recap.Trace,
+	}
+	if recap.Headline != nil {
+		ins := insightToJSON(*recap.Headline)
+		out.Headline = &ins
+	}
+	for _, ins := range recap.Public {
+		out.Public = append(out.Public, insightToJSON(ins))
+	}
+	for _, d := range recap.Dropped {
+		out.Dropped = append(out.Dropped, droppedInsightJSON{
+			insightJSON: insightToJSON(d.Insight),
+			Reason:      d.Reason,
+		})
+	}
+	return out
+}
+
+func insightToJSON(ins Insight) insightJSON {
+	return insightJSON{
+		SteamID:     ins.SteamID,
+		PlayerName:  ins.PlayerName,
+		TriggerType: ins.TriggerType,
+		Round:       ins.Round,
+		Score:       ins.Score,
+		Detail:      ins.Detail,
+	}
+}
+
+func (s *State) recordName(p *common.Player) {
+	if p == nil || p.SteamID64 == 0 {
+		return
+	}
+	if s.names == nil {
+		s.names = make(map[uint64]string)
+	}
+	if p.Name != "" {
+		s.names[p.SteamID64] = p.Name
+	}
+}
+
+func enrichInsights(insights []Insight, names map[uint64]string) []DebugEvent {
+	var trace []DebugEvent
+	for i := range insights {
+		if id, err := strconv.ParseUint(insights[i].SteamID, 10, 64); err == nil {
+			if name, ok := names[id]; ok {
+				insights[i].PlayerName = name
+			} else if insights[i].SteamID != "" {
+				trace = append(trace, DebugEvent{
+					Stage:   "name_fallback_used",
+					SteamID: insights[i].SteamID,
+					Trigger: insights[i].TriggerType,
+					Round:   insights[i].Round,
+					Message: "no captured name for player",
+				})
+			}
+		}
+		if victim, ok := insights[i].Detail["victim"].(string); ok {
+			if id, err := strconv.ParseUint(victim, 10, 64); err == nil {
+				if name, ok := names[id]; ok {
+					insights[i].Detail["victim_name"] = name
+				}
+			}
+		}
+	}
+	return trace
 }
 
 func WriteStateLog(path string, states []StateSnapshot) error {
@@ -151,7 +267,9 @@ func (s *State) ResetRound(players []*common.Player) {
 	s.activeDefusers = make(map[uint64]bool)
 	s.roundEndPlayers = nil
 	s.roundMoneySpent = make(map[uint64]int)
+	s.recentEnemyFlashes = make(map[uint64]recentFlash)
 	for _, p := range players {
+		s.recordName(p)
 		if p.IsAlive() {
 			s.alive[p.Team]++
 		}
