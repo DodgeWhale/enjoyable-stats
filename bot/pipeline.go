@@ -46,7 +46,7 @@ func (b *Bot) RunAnalysis(demoURL, channelID string) error {
 		}
 	}
 
-	if err := b.PostInsights(channelID, insights, mentions, demoPath, result.MapName, result.Rounds); err != nil {
+	if err := b.PostInsights(channelID, insights, mentions, demoPath, result.Summary); err != nil {
 		return fmt.Errorf("pipeline: post insights: %w", err)
 	}
 

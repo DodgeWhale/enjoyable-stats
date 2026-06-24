@@ -38,11 +38,8 @@ func FormatRecap(recap analyser.Recap, mentions map[string]string, showScores bo
 	}
 
 	var sb strings.Builder
-	if recap.MapName != "" {
-		sb.WriteString(fmt.Sprintf("**%s** recap\n", recap.MapName))
-	} else {
-		sb.WriteString("Match recap\n")
-	}
+	sb.WriteString(renderSummaryHeader(recap.Summary))
+	sb.WriteString("\n\n")
 
 	if recap.Headline != nil {
 		sb.WriteString(renderHeadline(*recap.Headline, mentions, showScores))
@@ -68,6 +65,24 @@ func FormatRecap(recap analyser.Recap, mentions map[string]string, showScores bo
 	}
 
 	return []string{sb.String()}
+}
+
+func renderSummaryHeader(s analyser.Summary) string {
+	prefix := "Match"
+	if s.MapName != "" {
+		prefix = "**" + s.MapName + "**"
+	}
+
+	var lines []string
+	if s.CTScore != 0 || s.TScore != 0 {
+		lines = append(lines, fmt.Sprintf("%s recap: CT %d - %d T", prefix, s.CTScore, s.TScore))
+	} else {
+		lines = append(lines, prefix+" recap")
+	}
+	if s.FirstHalfCT+s.FirstHalfT > 0 {
+		lines = append(lines, fmt.Sprintf("(CT %d-%d, %d-%d T)", s.FirstHalfCT, s.FirstHalfT, s.SecondHalfCT, s.SecondHalfT))
+	}
+	return strings.Join(lines, "\n")
 }
 
 func renderHeadline(ins analyser.Insight, mentions map[string]string, showScores bool) string {

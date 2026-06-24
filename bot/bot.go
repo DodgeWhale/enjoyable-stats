@@ -68,15 +68,15 @@ func (b *Bot) onInteraction(s *discordgo.Session, i *discordgo.InteractionCreate
 
 // FormatInsights builds a ranked recap from raw insights.
 // players maps steamID → discordUserID for @mentions.
-func FormatInsights(insights []analyser.Insight, players map[string]string, demoID, mapName string, rounds int) []string {
-	recap := analyser.BuildRecap(insights, demoID, mapName, rounds)
+func FormatInsights(insights []analyser.Insight, players map[string]string, demoID string, summary analyser.Summary) []string {
+	recap := analyser.BuildRecap(insights, demoID, summary)
 	return FormatRecap(recap, players, false)
 }
 
 // PostInsights formats and sends the recap to the given channel.
 // players maps steamID → discordUserID for @mentions.
-func (b *Bot) PostInsights(channelID string, insights []analyser.Insight, players map[string]string, demoID, mapName string, rounds int) error {
-	for _, msg := range FormatInsights(insights, players, demoID, mapName, rounds) {
+func (b *Bot) PostInsights(channelID string, insights []analyser.Insight, players map[string]string, demoID string, summary analyser.Summary) error {
+	for _, msg := range FormatInsights(insights, players, demoID, summary) {
 		if _, err := b.session.ChannelMessageSend(channelID, msg); err != nil {
 			return fmt.Errorf("bot: post insights: %w", err)
 		}

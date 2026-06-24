@@ -15,11 +15,46 @@ const (
 	minPublicScore = 15
 )
 
-func BuildRecap(insights []Insight, demoID, mapName string, rounds int) Recap {
+// makeSummary builds a match summary, deriving the tracked team's score and
+// outcome from trackedSide. When trackedSide is "" the tracked-perspective
+// fields are left zero/empty.
+func makeSummary(mapName string, rounds, ctScore, tScore int, ctClan, tClan, side string, firstHalfCT, firstHalfT, secondHalfCT, secondHalfT int) Summary {
+	s := Summary{
+		MapName:      mapName,
+		Rounds:       rounds,
+		CTScore:      ctScore,
+		TScore:       tScore,
+		FirstHalfCT:  firstHalfCT,
+		FirstHalfT:   firstHalfT,
+		SecondHalfCT: secondHalfCT,
+		SecondHalfT:  secondHalfT,
+		CTClan:       ctClan,
+		TClan:        tClan,
+		TrackedSide:  side,
+	}
+	switch side {
+	case "CT":
+		s.TrackedScore, s.OpponentScore = ctScore, tScore
+	case "T":
+		s.TrackedScore, s.OpponentScore = tScore, ctScore
+	default:
+		return s
+	}
+	switch {
+	case s.TrackedScore > s.OpponentScore:
+		s.Outcome = "won"
+	case s.TrackedScore < s.OpponentScore:
+		s.Outcome = "lost"
+	default:
+		s.Outcome = "tie"
+	}
+	return s
+}
+
+func BuildRecap(insights []Insight, demoID string, summary Summary) Recap {
 	recap := Recap{
 		DemoID:  demoID,
-		MapName: mapName,
-		Rounds:  rounds,
+		Summary: summary,
 	}
 
 	scored := make([]Insight, len(insights))

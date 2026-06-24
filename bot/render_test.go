@@ -44,7 +44,15 @@ func TestRenderInsightLine_degradesWithoutOptionalDetail(t *testing.T) {
 
 func TestFormatRecap_rendersHeadlineAndSupportingLines(t *testing.T) {
 	recap := analyser.Recap{
-		MapName: "de_dust2",
+		Summary: analyser.Summary{
+			MapName:      "de_dust2",
+			CTScore:      16,
+			TScore:       14,
+			FirstHalfCT:  3,
+			FirstHalfT:   9,
+			SecondHalfCT: 13,
+			SecondHalfT:  5,
+		},
 		Public: []analyser.Insight{
 			{SteamID: "1", PlayerName: "AcePlayer", TriggerType: "ace", Round: 10, Score: 100},
 			{SteamID: "2", PlayerName: "Flashy", TriggerType: "flash_tax", Round: 5, Score: 15, Detail: map[string]any{"blinds": 8}},
@@ -58,6 +66,12 @@ func TestFormatRecap_rendersHeadlineAndSupportingLines(t *testing.T) {
 	}
 	if msgs[0] == "" {
 		t.Fatal("expected non-empty recap message")
+	}
+	if !strings.Contains(msgs[0], "CT 16 - 14 T") {
+		t.Errorf("expected final score in recap, got %q", msgs[0])
+	}
+	if !strings.Contains(msgs[0], "(CT 3-9, 13-5 T)") {
+		t.Errorf("expected half scoreline in recap, got %q", msgs[0])
 	}
 }
 

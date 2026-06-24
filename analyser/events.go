@@ -9,10 +9,26 @@ type Insight struct {
 	Detail      map[string]any
 }
 
+type Summary struct {
+	MapName       string
+	Rounds        int
+	CTScore       int
+	TScore        int
+	FirstHalfCT   int
+	FirstHalfT    int
+	SecondHalfCT  int
+	SecondHalfT   int
+	CTClan        string
+	TClan         string
+	TrackedSide   string // "CT", "T", or "" when undeterminable or mixed
+	TrackedScore  int    // 0 when TrackedSide == ""
+	OpponentScore int    // 0 when TrackedSide == ""
+	Outcome       string // "won", "lost", "tie", or "" when TrackedSide == ""
+}
+
 type Recap struct {
 	DemoID   string
-	MapName  string
-	Rounds   int
+	Summary  Summary
 	Headline *Insight
 	Public   []Insight
 	Dropped  []DroppedInsight
@@ -35,8 +51,7 @@ type DebugEvent struct {
 
 type Result struct {
 	Insights  []Insight
-	MapName   string
-	Rounds    int
+	Summary   Summary
 	StateLog  []StateSnapshot
 	NameTrace []DebugEvent
 }

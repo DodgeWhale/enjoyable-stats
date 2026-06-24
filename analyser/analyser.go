@@ -328,11 +328,28 @@ func (a *Analyser) Analyse(path string, tracked map[string]bool, debug bool) (Re
 		record("bomb_defused")
 	})
 
+	parser.RegisterEventHandler(func(e events.AnnouncementLastRoundHalf) {
+		if parser.GameState().IsWarmupPeriod() {
+			return
+		}
+		state.markLastRoundOfFirstHalf()
+	})
+
 	parser.RegisterEventHandler(func(e events.RoundEnd) {
 		if parser.GameState().IsWarmupPeriod() {
 			return
 		}
 		state.Round = parser.GameState().TotalRoundsPlayed()
+		if state.lastRoundOfFirstHalf {
+			ctScore, tScore := 0, 0
+			if ct := parser.GameState().TeamCounterTerrorists(); ct != nil {
+				ctScore = ct.Score()
+			}
+			if t := parser.GameState().TeamTerrorists(); t != nil {
+				tScore = t.Score()
+			}
+			state.finishFirstHalf(ctScore, tScore)
+		}
 		state.roundEndPlayers = parser.GameState().Participants().Playing()
 		for _, p := range state.roundEndPlayers {
 			state.recordName(p)
@@ -373,13 +390,59 @@ func (a *Analyser) Analyse(path string, tracked map[string]bool, debug bool) (Re
 
 	nameTrace := enrichInsights(insights, state.names)
 
+	ctScore, tScore := 0, 0
+	ctClan, tClan := "", ""
+	if ct := parser.GameState().TeamCounterTerrorists(); ct != nil {
+		ctScore = ct.Score()
+		ctClan = ct.ClanName()
+	}
+	if t := parser.GameState().TeamTerrorists(); t != nil {
+		tScore = t.Score()
+		tClan = t.ClanName()
+	}
+
+	firstHalfCT, firstHalfT, secondHalfCT, secondHalfT := state.halfScores(ctScore, tScore)
+	summary := makeSummary(
+		mapName,
+		parser.GameState().TotalRoundsPlayed(),
+		ctScore, tScore,
+		ctClan, tClan,
+		trackedSide(&state),
+		firstHalfCT, firstHalfT, secondHalfCT, secondHalfT,
+	)
+
 	return Result{
 		Insights:  insights,
-		MapName:   mapName,
-		Rounds:    parser.GameState().TotalRoundsPlayed(),
+		Summary:   summary,
 		StateLog:  stateLog,
 		NameTrace: nameTrace,
 	}, nil
+}
+
+// trackedSide returns the final side ("CT" or "T") that the tracked players are
+// on at match end, or "" when tracked players span both sides or none are
+// present in the final round.
+func trackedSide(s *State) string {
+	ctTracked, tTracked := false, false
+	for _, p := range s.roundEndPlayers {
+		if p == nil || !s.Tracked[p.SteamID64] {
+			continue
+		}
+		switch p.Team {
+		case common.TeamCounterTerrorists:
+			ctTracked = true
+		case common.TeamTerrorists:
+			tTracked = true
+		}
+	}
+	switch {
+	case ctTracked && !tTracked:
+		return "CT"
+	case tTracked && !ctTracked:
+		return "T"
+	default:
+		return ""
+	}
 }
 
 const instantTradeWindow = 3 * time.Second

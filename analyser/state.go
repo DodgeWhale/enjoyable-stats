@@ -61,6 +61,11 @@ type State struct {
 
 	roundEndPlayers []*common.Player
 	roundMoneySpent map[uint64]int
+
+	lastRoundOfFirstHalf bool
+	halftimeCT           int
+	halftimeT            int
+	halftimeSeen         bool
 }
 
 type StateSnapshot struct {
@@ -108,12 +113,28 @@ func (s *State) snapshot(event string) StateSnapshot {
 
 type recapJSON struct {
 	DemoID   string               `json:"demo_id"`
-	Map      string               `json:"map"`
-	Rounds   int                  `json:"rounds"`
+	Summary  summaryJSON          `json:"summary"`
 	Headline *insightJSON         `json:"headline"`
 	Public   []insightJSON        `json:"public"`
 	Dropped  []droppedInsightJSON `json:"dropped"`
 	Trace    []DebugEvent         `json:"trace"`
+}
+
+type summaryJSON struct {
+	Map           string `json:"map"`
+	Rounds        int    `json:"rounds"`
+	CTScore       int    `json:"ct_score"`
+	TScore        int    `json:"t_score"`
+	FirstHalfCT   int    `json:"first_half_ct"`
+	FirstHalfT    int    `json:"first_half_t"`
+	SecondHalfCT  int    `json:"second_half_ct"`
+	SecondHalfT   int    `json:"second_half_t"`
+	CTClan        string `json:"ct_clan,omitempty"`
+	TClan         string `json:"t_clan,omitempty"`
+	TrackedSide   string `json:"tracked_side,omitempty"`
+	TrackedScore  int    `json:"tracked_score"`
+	OpponentScore int    `json:"opponent_score"`
+	Outcome       string `json:"outcome,omitempty"`
 }
 
 type insightJSON struct {
@@ -144,9 +165,23 @@ func WriteRecapLog(path string, recap Recap) error {
 func recapToJSON(recap Recap) recapJSON {
 	out := recapJSON{
 		DemoID: recap.DemoID,
-		Map:    recap.MapName,
-		Rounds: recap.Rounds,
-		Trace:  recap.Trace,
+		Summary: summaryJSON{
+			Map:           recap.Summary.MapName,
+			Rounds:        recap.Summary.Rounds,
+			CTScore:       recap.Summary.CTScore,
+			TScore:        recap.Summary.TScore,
+			FirstHalfCT:   recap.Summary.FirstHalfCT,
+			FirstHalfT:    recap.Summary.FirstHalfT,
+			SecondHalfCT:  recap.Summary.SecondHalfCT,
+			SecondHalfT:   recap.Summary.SecondHalfT,
+			CTClan:        recap.Summary.CTClan,
+			TClan:         recap.Summary.TClan,
+			TrackedSide:   recap.Summary.TrackedSide,
+			TrackedScore:  recap.Summary.TrackedScore,
+			OpponentScore: recap.Summary.OpponentScore,
+			Outcome:       recap.Summary.Outcome,
+		},
+		Trace: recap.Trace,
 	}
 	if recap.Headline != nil {
 		ins := insightToJSON(*recap.Headline)
@@ -173,6 +208,24 @@ func insightToJSON(ins Insight) insightJSON {
 		Score:       ins.Score,
 		Detail:      ins.Detail,
 	}
+}
+
+func (s *State) markLastRoundOfFirstHalf() {
+	s.lastRoundOfFirstHalf = true
+}
+
+func (s *State) finishFirstHalf(ctScore, tScore int) {
+	s.halftimeCT = ctScore
+	s.halftimeT = tScore
+	s.halftimeSeen = true
+	s.lastRoundOfFirstHalf = false
+}
+
+func (s *State) halfScores(finalCT, finalT int) (firstHalfCT, firstHalfT, secondHalfCT, secondHalfT int) {
+	if !s.halftimeSeen {
+		return 0, 0, 0, 0
+	}
+	return s.halftimeCT, s.halftimeT, finalCT - s.halftimeCT, finalT - s.halftimeT
 }
 
 func (s *State) recordName(p *common.Player) {

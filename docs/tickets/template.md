@@ -7,6 +7,8 @@ status: PLAN
 Status lifecycle: PLAN -> TODO -> IN PROGRESS -> IN REVIEW -> DONE.
 Set the frontmatter `status` to the current stage.
 
+You NEVER implement anything yourself. You do not edit source code, run build/test commands, or make changes to the codebase. Your only writable output is this ticket. All implementation work is delegated to an executor agent. The only exceptions are for simple changes of a few lines, where the coordination overhead is larger than the change, and pure copy changes, as the developer is not very strong at copy.
+
 This ticket is the source of truth for a fast executor agent (e.g. Composer 2.5),
 which executes well but reasons shallowly. The architect does the thinking; the
 ticket carries the decisions. Reason about:

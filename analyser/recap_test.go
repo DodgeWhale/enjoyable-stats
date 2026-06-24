@@ -27,7 +27,7 @@ func TestBuildRecap_enforcesCapsAndDropReasons(t *testing.T) {
 		{SteamID: "12", TriggerType: "unknown_trigger", Round: 14},
 	}
 
-	recap := BuildRecap(insights, "demo.dem", "de_mirage", 30)
+	recap := BuildRecap(insights, "demo.dem", Summary{MapName: "de_mirage", Rounds: 30})
 
 	if len(recap.Public) > maxPublic {
 		t.Errorf("public len = %d, want <= %d", len(recap.Public), maxPublic)
@@ -69,8 +69,8 @@ func TestBuildRecap_samePlayerEqualScoreTieBreakIsStable(t *testing.T) {
 		{SteamID: "1", TriggerType: "economy_terrorist", Round: 4},
 	}
 
-	r1 := BuildRecap(insights, "demo.dem", "", 10)
-	r2 := BuildRecap(insights, "demo.dem", "", 10)
+	r1 := BuildRecap(insights, "demo.dem", Summary{Rounds: 10})
+	r2 := BuildRecap(insights, "demo.dem", Summary{Rounds: 10})
 
 	if len(r1.Public) != maxPerPlayer {
 		t.Fatalf("public len = %d, want %d", len(r1.Public), maxPerPlayer)
@@ -90,7 +90,7 @@ func TestBuildRecap_samePlayerEqualScoreTieBreakVariesByDemo(t *testing.T) {
 
 	seen := make(map[string]bool)
 	for i := range 50 {
-		recap := BuildRecap(insights, fmt.Sprintf("demo-%d", i), "", 10)
+		recap := BuildRecap(insights, fmt.Sprintf("demo-%d", i), Summary{Rounds: 10})
 		seen[publicTriggerKey(recap)] = true
 	}
 	if len(seen) < 2 {
@@ -111,7 +111,7 @@ func TestBuildRecap_deduplicatesSamePlayerTriggerRound(t *testing.T) {
 		{SteamID: "1", TriggerType: "team_kill", Round: 3, Detail: map[string]any{"victim": "2"}},
 		{SteamID: "1", TriggerType: "team_kill", Round: 3, Detail: map[string]any{"victim": "2"}},
 	}
-	recap := BuildRecap(insights, "demo.dem", "", 10)
+	recap := BuildRecap(insights, "demo.dem", Summary{Rounds: 10})
 	if len(recap.Dropped) != 1 || recap.Dropped[0].Reason != "duplicate" {
 		t.Fatalf("expected one duplicate drop, got %+v", recap.Dropped)
 	}
@@ -126,7 +126,8 @@ func TestWriteRecapLog_goldenJSON(t *testing.T) {
 		{SteamID: "200", PlayerName: "Bravo", TriggerType: "flash_tax", Round: 8, Detail: map[string]any{"blinds": 2}},
 		{SteamID: "100", PlayerName: "Alpha", TriggerType: "ace", Round: 12},
 	}
-	recap := BuildRecap(insights, "fixtures/demo.dem", "de_inferno", 24)
+	summary := makeSummary("de_inferno", 24, 16, 14, "", "", "CT", 3, 9, 13, 5)
+	recap := BuildRecap(insights, "fixtures/demo.dem", summary)
 
 	data, err := json.MarshalIndent(recapToJSON(recap), "", "  ")
 	if err != nil {
@@ -138,6 +139,13 @@ func TestWriteRecapLog_goldenJSON(t *testing.T) {
 		`"demo_id": "fixtures/demo.dem"`,
 		`"map": "de_inferno"`,
 		`"rounds": 24`,
+		`"ct_score": 16`,
+		`"t_score": 14`,
+		`"first_half_ct": 3`,
+		`"first_half_t": 9`,
+		`"second_half_ct": 13`,
+		`"second_half_t": 5`,
+		`"outcome": "won"`,
 		`"trigger_type": "ace"`,
 		`"reason": "duplicate"`,
 		`"reason": "per_player_cap"`,

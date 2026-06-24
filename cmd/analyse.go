@@ -103,7 +103,7 @@ func runAnalyse(args []string) error {
 	parseDur := time.Since(parseStart)
 	slog.Info("demo parsed", "insights", len(insights), "duration", parseDur)
 
-	recap := analyser.BuildRecap(insights, demoPath, result.MapName, result.Rounds)
+	recap := analyser.BuildRecap(insights, demoPath, result.Summary)
 	recap.Trace = append(result.NameTrace, recap.Trace...)
 
 	if *debugFlag {
@@ -148,7 +148,7 @@ func runAnalyse(args []string) error {
 			return fmt.Errorf("analyse: create discord session: %w", err)
 		}
 		postStart := time.Now()
-		if err := b.PostInsights(channelID, insights, mentions, demoPath, result.MapName, result.Rounds); err != nil {
+		if err := b.PostInsights(channelID, insights, mentions, demoPath, result.Summary); err != nil {
 			return fmt.Errorf("analyse: post insights: %w", err)
 		}
 		postDur = time.Since(postStart)
